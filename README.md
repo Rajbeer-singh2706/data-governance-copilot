@@ -1,5 +1,5 @@
 # 🏛️ Data Governance Copilot
-## uv python install 3.11
+## uv python install 3.11.14
 ## uv venv --python 3.11.14
 ## uv init --name data_gov_env
 ## uv add -r requriments.txt
