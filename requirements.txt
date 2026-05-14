@@ -1,4 +1,5 @@
 # 
 python-dotenv>=1.0.0  # reads our .env file
 requests>=2.31.0      # makes HTTP calls to REST APIs
-ipykernal
+ipykernel
+setuptools-backends
