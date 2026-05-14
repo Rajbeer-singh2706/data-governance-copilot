@@ -1,21 +1,19 @@
 # pyproject.toml
+# Created on Day 1 — before writing any code
 
 [build-system]
 requires      = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name             = "data-governance-copilot"
-version          = "0.1.0"
-requires-python  = ">=3.11"
-dependencies     = [
-    "python-dotenv>=1.0.0",
-    "requests>=2.31.0",
-]
+name            = "data-governance-copilot"
+version         = "0.1.0"
+requires-python = ">=3.11"
+dependencies    = []          # start empty — add as we need them
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["src"]               # all source code lives in src/
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
-testpaths  = ["tests"]
+pythonpath = ["src"]          # pytest can find src/ packages
+testpaths  = ["tests"]        # pytest only looks in tests/
