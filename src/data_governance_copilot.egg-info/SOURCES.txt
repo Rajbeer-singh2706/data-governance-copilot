@@ -1,0 +1,17 @@
+README.md
+pyproject.toml
+src/agents/__init__.py
+src/agents/information_agent.py
+src/config/__init__.py
+src/config/settings.py
+src/core/__init__.py
+src/core/base_agent.py
+src/core/logging_utils.py
+src/data_governance_copilot.egg-info/PKG-INFO
+src/data_governance_copilot.egg-info/SOURCES.txt
+src/data_governance_copilot.egg-info/dependency_links.txt
+src/data_governance_copilot.egg-info/requires.txt
+src/data_governance_copilot.egg-info/top_level.txt
+src/tools/__init__.py
+src/ui/__init__.py
+tests/test_information_agent.py
