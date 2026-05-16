@@ -4,7 +4,6 @@ from core.base_agent import AgentRequest
 from agents.information_agent import InformationAgent, MOCK_GENERATORS
 from config.settings import DATA_PRODUCTS
 
-
 def make_req(query, products=None, time_range=None):
     return AgentRequest(
         query         = query,
