@@ -1,0 +1,57 @@
+# .dockerignore
+# Place in: data-governance-copilot/ (project root)
+
+# Secrets — NEVER go into a Docker image
+.env
+.env.*
+*.secret
+
+# Virtual environments — already baked into image via Dockerfile
+.venv/
+venv/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Git history — not needed in the image
+.git/
+.gitignore
+.gitattributes
+
+# Tests — not needed in production
+tests/
+pytest.ini
+
+# Dev tools and caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+
+# Local runtime data
+logs/
+data/vectorstore/
+
+# Documentation
+*.md
+docs/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Jupyter notebooks — not needed in production
+*.ipynb
+.ipynb_checkpoints/
+
+# IDE config
+.vscode/
+.idea/
+*.swp
