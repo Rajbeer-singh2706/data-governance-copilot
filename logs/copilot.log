@@ -144,3 +144,5 @@
 {"timestamp": "2026-05-14T12:30:46.246177", "level": "INFO", "logger": "agent.information_agent", "message": "[32c5dc9d] information_agent done in 1.48ms", "module": "base_agent", "function": "execute", "line": 83}
 {"timestamp": "2026-05-15T06:20:45.083502", "level": "INFO", "logger": "agent.information_agent", "message": "[e83751f2] information_agent received: 'Show me bookings metrics'", "module": "base_agent", "function": "execute", "line": 74}
 {"timestamp": "2026-05-15T06:20:45.084508", "level": "INFO", "logger": "agent.information_agent", "message": "[e83751f2] information_agent done in 1.01ms", "module": "base_agent", "function": "execute", "line": 83}
+{"timestamp": "2026-05-15T11:05:28.657925", "level": "INFO", "logger": "agent.information_agent", "message": "[a9e0cb21] information_agent received: 'Why did retention drop last month?'", "module": "base_agent", "function": "execute", "line": 74}
+{"timestamp": "2026-05-15T11:05:28.666660", "level": "INFO", "logger": "agent.information_agent", "message": "[a9e0cb21] information_agent done in 9.51ms", "module": "base_agent", "function": "execute", "line": 83}
