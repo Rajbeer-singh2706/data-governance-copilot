@@ -1,5 +1,0 @@
-agents
-config
-core
-tools
-ui
