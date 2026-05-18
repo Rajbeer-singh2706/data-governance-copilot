@@ -55,3 +55,5 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
+
+data_governance_copilot.egg-info/
