@@ -56,4 +56,4 @@ desktop.ini
 .idea/
 *.swp
 
-data_governance_copilot.egg-info/
+src/data_governance_copilot.egg-info/*

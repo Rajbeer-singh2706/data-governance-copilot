@@ -10,4 +10,4 @@ build/
 logs/*.log            # log files
 data/vectorstore/     # FAISS index (large binary files)
 .pytest_cache/
-data_governance_copilot.egg-info/
+src/data_governance_copilot.egg-info/*
