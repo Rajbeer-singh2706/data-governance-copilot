@@ -70,8 +70,9 @@ class SupervisorAgent:
         try:
             # Rule queries get their own fast path
             if self._is_rule_query(query):
+                print("HERE1")
                 return self._run_rule_query(query)
-            
+            print("HERE2")
             products = self._detect_products(query)
             request  = AgentRequest(
                 query         = query,
@@ -179,8 +180,9 @@ class SupervisorAgent:
         """Check if query is about rules."""
         q = query.lower()
         return any(kw in q for kw in [
+            "create a business rule",
             "create rule", "add rule", "define rule",
-            "new rule",    "list rules","show rules",
+            "new rule",    "list rules","show rules","show all",
             "all rules",   "evaluate",  "check rules",
             "run rules",   "validate",  "create dq rule",
         ])
