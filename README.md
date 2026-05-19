@@ -2,6 +2,8 @@
 ### TO RUN ########
 ## uv run streamlit run src/ui/app.py 
 
+
+## updated
 ## uv python install 3.11
 ## uv venv --python 3.11
 ## uv init --name data_gov_env
