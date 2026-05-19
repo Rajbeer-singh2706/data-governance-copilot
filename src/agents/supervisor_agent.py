@@ -1,11 +1,11 @@
-
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from core.base_agent import AgentRequest
 from agents.information_agent import InformationAgent
-from agents.knowledge_agent import KnowledgeAgent
+from agents.knowledge_agent   import KnowledgeAgent
+from agents.metadata_agent    import MetadataAgent
 from config.settings import config
 
 
@@ -29,8 +29,7 @@ class SupervisorResponse:
 class SupervisorAgent:
     """
     Routes queries to registered agents and merges results.
-    Day 8: InformationAgent + KnowledgeAgent.
-    Grows each day as we add more agents.
+    Day 9: InformationAgent + KnowledgeAgent + MetadataAgent.
     """
 
     PRODUCT_KEYWORDS = {
@@ -43,17 +42,19 @@ class SupervisorAgent:
     }
 
     def __init__(self, enable_mock: bool = True):
-        self.enable_mock = enable_mock
-        self.information_agent = InformationAgent(
+        self.enable_mock        = enable_mock
+        self.information_agent  = InformationAgent(
             config=config, enable_mock=enable_mock
         )
-        self.knowledge_agent = KnowledgeAgent(
+        self.knowledge_agent    = KnowledgeAgent(
+            config=config, enable_mock=enable_mock
+        )
+        self.metadata_agent     = MetadataAgent(
             config=config, enable_mock=enable_mock
         )
 
     def run(self, query: str,
             time_range: str = "last_month") -> SupervisorResponse:
-        """Main entry point — called by the UI."""
         try:
             products = self._detect_products(query)
             request  = AgentRequest(
@@ -62,30 +63,38 @@ class SupervisorAgent:
                 time_range    = time_range,
             )
 
-            # Run both agents
+            # Run all three agents
             info_result  = self.information_agent.execute(request)
             know_result  = self.knowledge_agent.execute(request)
+            meta_result  = self.metadata_agent.execute(request)
 
-            # Merge results
-            combined_summary = self._merge_summaries(
-                info_result, know_result
+            # Merge everything
+            combined = self._merge_summaries(
+                info_result, know_result, meta_result
             )
-            all_sources  = info_result.sources + know_result.sources
-            confidence   = (
-                info_result.confidence + know_result.confidence
-            ) / 2
+            all_sources = (
+                info_result.sources
+                + know_result.sources
+                + meta_result.sources
+            )
+            confidence = round((
+                info_result.confidence
+                + know_result.confidence
+                + meta_result.confidence
+            ) / 3, 2)
 
             return SupervisorResponse(
                 query       = query,
-                summary     = combined_summary,
+                summary     = combined,
                 data        = info_result.data,
                 anomalies   = info_result.data.get("anomalies", []),
                 sources     = all_sources,
                 agents_used = [
                     info_result.agent_name,
                     know_result.agent_name,
+                    meta_result.agent_name,
                 ],
-                confidence  = round(confidence, 2),
+                confidence  = confidence,
                 success     = info_result.success,
                 error       = info_result.error,
             )
@@ -99,7 +108,6 @@ class SupervisorAgent:
             )
 
     def _detect_products(self, query: str) -> List[str]:
-        """Scan query for product keywords."""
         q        = query.lower()
         products = set()
         for keyword, product in self.PRODUCT_KEYWORDS.items():
@@ -107,14 +115,12 @@ class SupervisorAgent:
                 products.add(product)
         return list(products) if products else ["retention"]
 
-    def _merge_summaries(self,
-                          info_result,
-                          know_result) -> str:
-        """Combine summaries from both agents."""
-        parts = []
-        if info_result.success and info_result.summary:
-            parts.append(info_result.summary)
-        if know_result.success and know_result.summary:
-            parts.append(know_result.summary)
+    def _merge_summaries(self, *results) -> str:
+        """Merge any number of agent results into one summary."""
+        parts = [
+            r.summary
+            for r in results
+            if r.success and r.summary
+        ]
         return "\n\n---\n\n".join(parts) if parts \
                else "No results found."
