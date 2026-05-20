@@ -5,7 +5,11 @@ from pathlib import Path
 # Add src/ to path so imports work when running from ui/
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agents.supervisor_agent import SupervisorAgent
+#from agents.supervisor_agent import SupervisorAgent
+from graph.graph import copilot_graph
+from graph.state import initial_state
+import uuid 
+
 from config.settings import config
 
 # ── Page config ─────────────────────────────────────────
@@ -18,13 +22,19 @@ st.set_page_config(
 
 # ── Session state ───────────────────────────────────────
 # Initialise once — persists between reruns
-if "supervisor" not in st.session_state:
-    st.session_state.supervisor = SupervisorAgent(
-        enable_mock=config.enable_mock
-    )
+# if "supervisor" not in st.session_state:
+#     st.session_state.supervisor = SupervisorAgent(
+#         enable_mock=config.enable_mock
+#     )
+
+# In session state init:
+if "thread_id" not in st.session_state:
+    st.session_state.thread_id = str(uuid.uuid4())
 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
+
+
 
 # ── Header ──────────────────────────────────────────────
 st.title("🏛️ Data Governance Copilot")
@@ -41,9 +51,9 @@ with st.sidebar:
     )
     if mock_mode != config.enable_mock:
         config.enable_mock = mock_mode
-        st.session_state.supervisor = SupervisorAgent(
-            enable_mock=mock_mode
-        )
+        # st.session_state.supervisor = SupervisorAgent(
+        #     enable_mock=mock_mode
+        # )
         st.rerun()
 
     time_range = st.selectbox(
@@ -94,9 +104,54 @@ for msg in st.session_state.chat_history:
 
 # ── Query input ─────────────────────────────────────────
 pending = st.session_state.pop("pending_query", None)
-query   = st.chat_input(
-    "Ask about your data products...",
-) or pending
+query   = st.chat_input("Ask about your data products...",) or pending
+
+# In query handler:
+config = {
+    "configurable": {
+        "thread_id": st.session_state.thread_id
+    }
+}
+state  = initial_state(
+    query      = query,
+    thread_id  = st.session_state.thread_id,
+    time_range = time_range,
+)
+result = copilot_graph.invoke(state, config=config)
+
+# Map result to what UI expects:
+class GraphResponse:
+    def __init__(self, result):
+        self.summary      = result.get("final_summary","")
+        self.intent       = result.get("intent","unknown")
+        self.confidence   = result.get("confidence", 0.0)
+        self.sources      = result.get("sources", [])
+        self.agents_used  = [
+            r.get("agent","")
+            for r in result.get("agent_results",[])
+        ]
+        self.auto_tickets = result.get("auto_tickets",[])
+        self.anomalies    = result.get("anomalies",[])
+        self.data         = next(
+            (r.get("data",{})
+             for r in result.get("agent_results",[])
+             if r.get("agent")=="information_agent"),
+            {}
+        )
+        self.success      = bool(self.summary)
+
+
+# In query handler:
+config = {
+    "configurable": {
+        "thread_id": st.session_state.thread_id
+    }
+}
+state  = initial_state(
+    query      = query,
+    thread_id  = st.session_state.thread_id,
+    time_range = time_range,
+)
 
 if query:
     # Show user message
@@ -110,10 +165,12 @@ if query:
     # Run supervisor and show response
     with st.chat_message("assistant"):
         with st.spinner("Analysing your data..."):
-            response = st.session_state.supervisor.run(
-                query      = query,
-                time_range = time_range,
-            )
+            result = copilot_graph.invoke(state, config=config)
+            response = GraphResponse(result)
+            # response = st.session_state.supervisor.run(
+            #     query      = query,
+            #     time_range = time_range,
+            # )
 
         if response.success:
             st.markdown(response.summary)
@@ -149,3 +206,5 @@ if query:
             "sources":     response.sources,
         }
     })
+
+
