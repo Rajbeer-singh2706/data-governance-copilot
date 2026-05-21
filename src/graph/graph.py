@@ -83,3 +83,10 @@ def build_graph():
 
 # Singleton — compile once
 copilot_graph = build_graph()
+
+
+# if __name__ == '__main__':
+#     # Singleton — compile once
+#     copilot_graph = build_graph()
+#     copilot_graph.invoke("")
+

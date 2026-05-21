@@ -1,7 +1,7 @@
 import os
 from langgraph.checkpoint.sqlite import SqliteSaver
 from pathlib import Path
-
+import sqlite3
 
 def get_checkpointer():
     """
@@ -24,10 +24,20 @@ def get_checkpointer():
 
     # Default: SQLite
     db_path = Path(
-        os.getenv("SQLITE_PATH", "./data/memory.db")
+        os.getenv("SQLITE_PATH", os.path.join("..","data","memory.db"))
     )
+    #print(f"PATH : {db_path}")
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    return SqliteSaver.from_conn_string(str(db_path))
+    print(f"PATH : {db_path}")
+    # Use proper SQLite connection string format
+    #conn_string = f"sqlite:///{db_path.resolve()}"
+    #checkpointer = SqliteSaver.from_conn_string(conn_string)
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    
+    # Create SqliteSaver
+    persistent_memory = SqliteSaver(conn)
+    print(f"checkpointer : {persistent_memory}")
+    return persistent_memory
 
 
 # # Every graph invocation needs config with thread_id

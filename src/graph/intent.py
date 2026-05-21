@@ -1,5 +1,3 @@
-
-
 # Keyword-based intent classification
 # Day 13 replaces with GPT-4o structured output
 
@@ -77,8 +75,11 @@ PRODUCT_KEYWORDS: Dict[str, str] = {
 
 def classify_intent(query: str) -> str:
     q = query.lower()
+    print(f"q: {q}")
     for intent, keywords in INTENT_RULES.items():
+        print(intent, keywords)
         if any(kw in q for kw in keywords):
+            print(f"intent.value: {intent.value}")
             return intent.value
     return QueryIntent.UNKNOWN.value
 
