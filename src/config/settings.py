@@ -3,7 +3,10 @@ from dataclasses import dataclass, field
 from typing import Optional
 from dotenv import load_dotenv
 
-load_dotenv()
+# load_dotenv()
+load_dotenv(r'D:\secrets\global.env')
+
+
 
 @dataclass
 class LLMConfig:

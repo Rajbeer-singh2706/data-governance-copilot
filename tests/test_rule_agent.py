@@ -124,7 +124,7 @@ def test_unknown_query_defaults_to_list(agent):
 
 
 def test_supervisor_fast_path():
-    from agents.supervisor_agent import SupervisorAgent
+    from deployment.old.supervisor_agent import SupervisorAgent
     sup  = SupervisorAgent(enable_mock=True)
     resp = sup.run("list all rules")
     assert resp.success
@@ -133,7 +133,7 @@ def test_supervisor_fast_path():
 
 
 def test_supervisor_skips_rule_agent_on_normal_query():
-    from agents.supervisor_agent import SupervisorAgent
+    from deployment.old.supervisor_agent import SupervisorAgent
     sup  = SupervisorAgent(enable_mock=True)
     resp = sup.run("Why did retention drop?")
     assert "rule_agent" not in resp.agents_used

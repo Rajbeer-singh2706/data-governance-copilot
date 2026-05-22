@@ -4,6 +4,8 @@
 from enum import Enum
 from typing import List, Dict
 
+
+
 class QueryIntent(str, Enum):
     WRITE_TICKET     = "write_ticket"
     WRITE_METADATA   = "write_metadata"
@@ -72,6 +74,30 @@ PRODUCT_KEYWORDS: Dict[str, str] = {
     "ltv":       "ltv",        
     "lifetime": "ltv",
 }
+
+
+
+class IntentClassification(BaseModel):
+    intent: QueryIntent
+    data_products: List[str]
+    confidence: float
+    reasoning: str
+
+
+    def _build_chain():
+        llm = ChatOpenAI(
+
+        )
+
+        prompt = ChatPrompttemplate.fromMessages([
+            (system, :_SYSETEM),
+            ("human", "Classify this query:\n{query}")
+        ])
+
+        chain = prompt | llm.with_structired_output(IntentClassification)
+
+        return prompt | llm 
+
 
 def classify_intent(query: str) -> str:
     q = query.lower()

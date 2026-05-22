@@ -3,15 +3,13 @@ Production-grade logging and error handling for Data Governance Copilot.
 """
 
 import logging
-import sys,json , traceback 
+import os, sys,json , traceback 
 
 from datetime import datetime
 from pathlib import Path 
 from typing import Any
 from functools import wraps
 import time 
-
-
 
 class JSONFormatter(logging.Formatter):
     """Structured JSON log formatter for production environments."""
@@ -36,8 +34,9 @@ class JSONFormatter(logging.Formatter):
             log_entry["duration_ms"] = record.duration_ms
         return json.dumps(log_entry)
     
-def setup_logger(name: str, log_file: str = "./logs/copilot.log", level: str = "INFO") -> logging.Logger:
+def setup_logger(name: str, log_file: str = "copilot.log", level: str = "INFO") -> logging.Logger:
     """Configure a logger with both console and file handlers."""
+    log_file = os.path.join(".","logs", log_file)
     Path(log_file).parent.mkdir(parents=True, exist_ok=True)
 
     logger = logging.getLogger(name)
@@ -64,7 +63,12 @@ def setup_logger(name: str, log_file: str = "./logs/copilot.log", level: str = "
 # Module-level root logger — used by non-agent code
 # Root application logger
 logger = setup_logger("copilot")
+# print(os.getcwd())
+# D:\0_PROJECTS\data-governance-copilot
 
+#logger.info(f"log_file: { Path(os.path.join("..","logs", "copilot.log"))}")
+#logger.info(f"log_file: {  Path(os.path.join("..","logs", "copilot.log")).parent}")
+   
 
 class AgentError(Exception):
     """Base exception for all agent errors."""
