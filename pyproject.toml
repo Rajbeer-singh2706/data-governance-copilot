@@ -19,6 +19,9 @@ dependencies    = [
     "openai>=2.37.0",
     "langsmith>=0.8.5",
     "langgraph-checkpoint-sqlite>=3.1.0",
+    "pydantic>=2.13.4",
+    "redis>=5.0.0",
+    "hiredis>=2.3.0",
 ]   
 
 [tool.setuptools.packages.find]

@@ -8,6 +8,10 @@ langchain
 langchain-core
 langchain-openai
 langchain-community
+litellm
 openai
 langsmith
 langgraph-checkpoint-sqlite
+pydantic
+redis>=5.0.0 
+hiredis>=2.3.0

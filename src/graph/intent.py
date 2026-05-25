@@ -31,7 +31,6 @@ class QueryIntent(str, Enum):
     METRIC_ANALYSIS  = "metric_analysis"
     UNKNOWN          = "unknown"
 
-
 # ── 2. Structured output schema ────────────────────────────────────────────
 class IntentClassification(BaseModel):
     """
@@ -96,21 +95,18 @@ _chain = None  # type: ignore[assignment]
  
 def _build_chain():
     """Construct prompt | llm.with_structured_output chain."""
-    from langchain_openai import ChatOpenAI
+    from core.llm_factory import get_structured_llm
+    from config.settings  import config
     from langchain_core.prompts import ChatPromptTemplate
- 
-    llm = ChatOpenAI(
-        model=os.getenv("LLM_MODEL", "gpt-4o"),
-        temperature=0,
-        api_key=os.getenv("OPENAI_API_KEY", ""),
-        # LangSmith auto-tags this run as "intent_classifier"
-        tags=["intent_classifier"],
-    )
+
+    structured_llm = get_structured_llm(config.llm, IntentClassification)
+
     prompt = ChatPromptTemplate.from_messages([
         ("system", _SYSTEM),
         ("human", "Classify this query:\n{query}"),
     ])
-    return prompt | llm.with_structured_output(IntentClassification)
+    return prompt | structured_llm
+    #return prompt | llm.with_structured_output(IntentClassification)
 
 # ── 5. Public API ──────────────────────────────────────────────────────────
 def classify_intent_gpt(query: str) -> IntentClassification:
