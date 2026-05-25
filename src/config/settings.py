@@ -62,6 +62,7 @@ class AppConfig:
 
 # Singleton — created once, imported everywhere
 config = AppConfig()
+print(config)
 
 
 # Data product registry

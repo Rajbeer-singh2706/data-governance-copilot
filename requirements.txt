@@ -15,3 +15,4 @@ langgraph-checkpoint-sqlite
 pydantic
 redis>=5.0.0 
 hiredis>=2.3.0
+langchain-litellm

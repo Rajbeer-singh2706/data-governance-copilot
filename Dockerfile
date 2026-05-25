@@ -2,7 +2,7 @@
 # Stage 1: Builder — installs all dependencies
 # ═══════════════════════════════════════════════
 
-FROM python:3.11-slim as builder
+FROM python:3.13-slim as builder
 
 WORKDIR /app
 
@@ -19,7 +19,7 @@ RUN uv venv .venv && \
    . .venv/bin/activate && \
     uv pip install -r requirements.txt --no-cache
 
-FROM python:3.11-slim AS runtime
+FROM python:3.13-slim AS runtime
 WORKDIR /app
 COPY --from=builder /app/.venv ./.venv
 COPY src/ ./src/

@@ -38,7 +38,6 @@ _fallback: dict = {}    # in-memory fallback when Redis unavailable
 
 
 # ── Connection ─────────────────────────────────────────────────────────────
-
 def get_client(config):
     """
     Connect to Redis once and reuse the connection.
@@ -79,7 +78,6 @@ def make_key(prefix: str, **kwargs) -> str:
     digest = hashlib.sha256(raw.encode()).hexdigest()[:16]
     return f"{prefix}:{digest}"
 
-
 # ── Get / Set ──────────────────────────────────────────────────────────────
 def cache_get(client, key: str) -> Any | None:
     """Fetch from Redis or in-memory fallback. Returns None on miss."""
@@ -102,7 +100,6 @@ def cache_set(client, key: str, value: Any, ttl: int) -> None:
     else:
         _fallback[key] = value
 
-
 # ── Invalidation ───────────────────────────────────────────────────────────
 def invalidate_pattern(client, pattern: str) -> int:
     """
@@ -123,7 +120,6 @@ def invalidate_pattern(client, pattern: str) -> int:
     except Exception as exc:
         logger.warning("invalidate_pattern error: %s", exc)
         return 0
-
 
 # ── Decorator ──────────────────────────────────────────────────────────────
 def cached_node(prefix: str, ttl: int = 3600):
