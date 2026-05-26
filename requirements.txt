@@ -1,9 +1,19 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Data Governance Copilot — requirements.txt
+#
+# IMPORTANT: All langchain-* packages must stay on the 0.3.x line together.
+#   langchain-groq 1.x requires langchain-core>=1.x (a different major line)
+#   langchain-groq 0.3.8 is the latest that works with langchain-core 0.3.76
+#
+# Resolved with: uv pip install ... --dry-run  (Python 3.12)
+# ═══════════════════════════════════════════════════════════════════════════
+
 # ── Core ──────────────────────────────────────────────────────────────────
 python-dotenv>=1.0.0
 requests>=2.31.0
 pydantic>=2.0.0,<3.0.0
 
-# ── LangChain ecosystem ───────────────────────────────────────────────────
+# ── LangChain 0.3.x ecosystem (pinned together — do NOT mix 0.3.x / 1.x) ──
 langchain==0.3.27
 langchain-core==0.3.76
 langchain-community==0.3.29
@@ -11,12 +21,15 @@ langchain-openai==0.3.33
 langsmith>=0.2.0
 
 # ── LangGraph + memory ────────────────────────────────────────────────────
-langgraph>=1.2.0
-langgraph-checkpoint-sqlite>=3.1.0
+langgraph>=1.0.0,<2.0.0
+langgraph-checkpoint-sqlite>=3.0.0
 
 # ── LLM providers ─────────────────────────────────────────────────────────
-langchain-groq>=1.1.0           # Groq — dev default (fast, free tier)
-langchain-litellm>=0.3.0        # LiteLLM — multi-provider fallback (prod)
+# groq: 0.3.8 is the latest version compatible with langchain-core 0.3.x
+langchain-groq==0.3.8
+
+# litellm: 0.6.x series is compatible with langchain-core 0.3.x
+langchain-litellm>=0.3.0,<0.7.0
 
 # ── Caching ───────────────────────────────────────────────────────────────
 redis>=5.0.0
