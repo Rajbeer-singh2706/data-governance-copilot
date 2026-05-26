@@ -21,7 +21,7 @@ x-app-common: &app-common            # shared config reused by app + api
   env_file: .env
   environment:
     # Override REDIS_HOST so containers talk to the redis service, not localhost
-    REDIS_HOST: redis
+    REDIS_HOST: "redis"
     REDIS_PORT: "6379"
     REDIS_ENABLED: "true"
     PYTHONPATH: /app/src
