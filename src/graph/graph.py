@@ -128,6 +128,7 @@ def build_graph():
  
     # Attach SQLite / Postgres checkpointer (persistent memory)
     checkpointer = get_checkpointer()
+    ## redis ---> update here
     return workflow.compile(checkpointer=checkpointer)
  
  

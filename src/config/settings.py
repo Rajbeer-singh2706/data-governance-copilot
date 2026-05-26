@@ -43,7 +43,6 @@ class LLMConfig:
         """Backward-compat alias for primary_model."""
         return self.primary_model
 
-
 @dataclass
 class DatabricksConfig:
     host:      str = field(default_factory=lambda: os.getenv("DATABRICKS_HOST", ""))

@@ -1,0 +1,1 @@
+# empty — makes src/api/ a Python package
