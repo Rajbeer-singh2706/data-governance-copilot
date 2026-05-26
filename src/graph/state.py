@@ -55,6 +55,7 @@ def initial_state(
     thread_id:  str = "default",
     user_id:    str = "anonymous",
     time_range: str = "last_month",
+    approved:   bool = False,
 ) -> dict:
     """Build a clean initial state dict for a new query invocation."""
     return {
@@ -71,7 +72,7 @@ def initial_state(
         "errors":              [],
         "auto_tickets":        [],
         "pending_action":      None,
-        "approved":            False,
+        "approved":            approved,
         "final_summary":       "",
         "confidence":          0.0,
         "conversation_history": [],

@@ -19,6 +19,8 @@ import time
 
 from core.base_agent import AgentRequest
 from core.cache      import cached_node          # Day 14
+from core.retry import retry_agent_call    
+
 from agents.information_agent import InformationAgent
 from agents.knowledge_agent   import KnowledgeAgent
 from agents.metadata_agent    import MetadataAgent
@@ -116,31 +118,52 @@ def supervisor_node(state: AgentState) -> dict:
 
 @cached_node("information_agent", ttl=1800)     # 30 min — SQL results
 def information_node(state: AgentState) -> dict:
-    result = _agents["information"].execute(_build_request(state))
+    result = retry_agent_call(                   # ← was: _agents["information"].execute(...)
+        _agents["information"].execute,
+        _build_request(state),
+        max_retries=3,
+    )
     return {
         "agent_results": [result.to_dict()],
-        "sources":       result.sources,
-        "anomalies":     result.data.get("anomalies", []) if result.success else [],
+        "sources":        result.sources if result.success else [],
+         "anomalies":     result.data.get("anomalies",[]) if result.success else [],
+         "errors":        [] if result.success else [
+            {"node": "information_node", "error": result.error}
+         ]  
     }
 
 
 @cached_node("knowledge_agent", ttl=7200)       # 2 hrs — docs change slowly
 def knowledge_node(state: AgentState) -> dict:
-    result = _agents["knowledge"].execute(_build_request(state))
+    result = retry_agent_call(                   # ← was: _agents["knowledge"].execute(...)
+        _agents["knowledge"].execute,
+        _build_request(state),
+        max_retries=3,
+    )
     return {
         "agent_results": [result.to_dict()],
-        "sources":       result.sources,
+        "sources":        result.sources if result.success else [],
+         "anomalies":     result.data.get("anomalies",[]) if result.success else [],
+         "errors":        [] if result.success else [
+            {"node": "knowledge_node", "error": result.error}
+         ]  
     }
-
 
 @cached_node("metadata_agent", ttl=3600)        # 1 hr — Collibra metadata
 def metadata_node(state: AgentState) -> dict:
-    result = _agents["metadata"].execute(_build_request(state))
+    result = retry_agent_call(                   # ← was: _agents["metadata"].execute(...)
+        _agents["metadata"].execute,
+        _build_request(state),
+        max_retries=3,
+    )
     return {
         "agent_results": [result.to_dict()],
-        "sources":       result.sources,
+        "sources":        result.sources if result.success else [],
+         "anomalies":     result.data.get("anomalies",[]) if result.success else [],
+         "errors":        [] if result.success else [
+            {"node": "metadata_node", "error": result.error}
+         ]  
     }
-
 
 # ── Uncached agent nodes ───────────────────────────────────────────────────
 # capacity_node: Jira tickets open/close constantly — never cache
@@ -166,19 +189,42 @@ def rule_node(state: AgentState) -> dict:
 
 def auto_ticket_node(state: AgentState) -> dict:
     anomalies = state.get("anomalies", [])
+    approved  = state.get("approved", False)
     products  = state.get("data_products", ["unknown"])
-    created   = []
 
-    capacity = _agents["capacity"]
-    for anomaly in anomalies:
-        if any(kw in anomaly.lower()
-               for kw in ["threshold", "missing", "below", "risk"]):
-            result = capacity.create_ticket_from_anomaly(anomaly, products[0])
-            if result.success:
-                created.append(result.data.get("ticket_id", "?"))
+    critical = [a for a in anomalies if any(
+        kw in a.lower() for kw in
+        ["threshold","missing","below","risk","drop","fail"]
+    )]
 
-    return {"auto_tickets": created}
+    if not critical:
+        return {"auto_tickets": [], "pending_action": None}
 
+    if not approved:                             # ← HITL gate
+        return {
+            "pending_action": {
+                "action":    "create_jira_tickets",
+                "anomalies": critical,
+                "products":  products,
+                "count":     len(critical),
+                "message":   (
+                    f"Found {len(critical)} critical anomaly/anomalies in "
+                    f"{', '.join(products)}. Approve Jira ticket creation?"
+                ),
+            },
+            "auto_tickets": [],
+        }
+
+    # approved=True — create tickets
+    created = []
+    for anomaly in critical:
+        result = _agents["capacity"].create_ticket_from_anomaly(
+            anomaly, products[0]
+        )
+        if result.success:
+            created.append(result.data.get("ticket_id","?"))
+
+    return {"auto_tickets": created, "pending_action": None, "approved": True}
 
 # ══════════════════════════════════════════════════════════════════════════
 # DAY 14 — synthesizer_node uses get_llm() instead of ChatOpenAI directly
