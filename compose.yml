@@ -24,6 +24,7 @@ x-app-common: &app-common            # shared config reused by app + api
     REDIS_HOST: "redis"
     REDIS_PORT: "6379"
     REDIS_ENABLED: "true"
+    REDIS_PASSWORD: ""
     PYTHONPATH: /app/src
   depends_on:
     redis:

@@ -26,11 +26,12 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
-import logging
 from functools import wraps
 from typing import Any, Callable
 
-logger = logging.getLogger(__name__)
+from core.logging_utils import setup_logger
+
+logger = setup_logger("copilot.cache")
 
 # ── Module-level singletons ────────────────────────────────────────────────
 _client = None          # redis.Redis | None

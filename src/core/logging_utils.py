@@ -41,6 +41,7 @@ def setup_logger(name: str, log_file: str = "copilot.log", level: str = "INFO") 
 
     logger = logging.getLogger(name)
     logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+    logger.propagate = False
 
     if logger.handlers:
         return logger
