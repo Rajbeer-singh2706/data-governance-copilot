@@ -26,6 +26,23 @@ st.set_page_config(
 )
 
 
+# Add custom CSS block after st.set_page_config():
+st.markdown("""
+<style>
+.pill { display:inline-block; background:#eef5ff; border:1px solid #b5d4f4;
+        border-radius:20px; padding:2px 10px; font-size:12px; color:#185fa5; margin:2px; }
+.agent-pill { display:inline-block; background:#f0f0f0; border-radius:20px;
+              padding:2px 10px; font-size:11px; color:#555; margin:2px; }
+.anomaly-badge { background:#fcebeb; border-left:3px solid #E24B4A;
+                 border-radius:4px; padding:6px 10px; font-size:13px;
+                 color:#A32D2D; margin:4px 0; }
+</style>
+""", unsafe_allow_html=True)
+
+# Add _confidence_bar(), _source_pills(), _anomaly_badges(), _stats_bar()
+# Add Redis + token gauge to sidebar
+# See full app.py in the downloadable files
+
 # ── Session state ─────────────────────────────────────────────────────────
 
 if "thread_id"    not in st.session_state:

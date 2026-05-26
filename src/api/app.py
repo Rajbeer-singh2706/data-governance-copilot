@@ -156,3 +156,11 @@ async def agents_status(request: Request):
             "mock_mode":config.enable_mock,"redis_ok":redis_ok,
             "agents":agents,"daily_tokens":get_daily_usage(redis),
             "timestamp":datetime.utcnow().isoformat()+"Z"}
+
+
+# Add these two lines to src/api/app.py after the app = FastAPI(...) setup:
+
+from teams.bot import router as teams_router   # ← add this
+app.include_router(teams_router)               # ← add this
+
+# That's it — /teams/webhook and /teams/health are now live

@@ -11,7 +11,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
 @dataclass
 class LLMConfig:
     """LLM provider configuration. Supports 'groq' and 'openai'."""
@@ -72,6 +71,25 @@ class RedisConfig:
 
 
 @dataclass
+class VectorDBConfig:
+    """pgvector connection for knowledge_agent RAG."""
+    host:          str = os.getenv("POSTGRES_HOST",     "localhost")
+    port:          int = int(os.getenv("POSTGRES_PORT", "5432"))
+    database:      str = os.getenv("POSTGRES_DB",       "governance_db")
+    user:          str = os.getenv("POSTGRES_USER",     "postgres")
+    password:      str = os.getenv("POSTGRES_PASSWORD", "")
+    table_name:    str = "document_embeddings"
+    embedding_dim: int = 1536   # text-embedding-3-small output dim
+
+    @property
+    def connection_string(self) -> str:
+        return (
+            f"postgresql+psycopg2://{self.user}:{self.password}"
+            f"@{self.host}:{self.port}/{self.database}"
+        )
+
+
+@dataclass
 class AppConfig:
     debug:       bool = field(default_factory=lambda: os.getenv("DEBUG", "false").lower() == "true")
     log_level:   str  = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
@@ -80,6 +98,7 @@ class AppConfig:
     llm:         LLMConfig        = field(default_factory=LLMConfig)
     databricks:  DatabricksConfig = field(default_factory=DatabricksConfig)
     redis:       RedisConfig      = field(default_factory=RedisConfig)
+    vector_db:   VectorDBConfig   = field(default_factory=VectorDBConfig)  # Day 18
 
 
 # Singleton — created once at import time, used everywhere

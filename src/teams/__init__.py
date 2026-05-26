@@ -1,0 +1,1 @@
+## src/teams/__init__.py — empty, makes src/teams/ a package

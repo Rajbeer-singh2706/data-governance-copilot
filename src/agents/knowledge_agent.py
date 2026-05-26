@@ -1,5 +1,6 @@
 from typing import Any, Dict, List
 from core.base_agent import BaseAgent, AgentRequest, AgentResult
+from core.vector_store import get_vector_store, similarity_search
 
 # ── Mock knowledge base ──────────────────────────────────
 MOCK_KNOWLEDGE_BASE = {
@@ -85,8 +86,9 @@ class KnowledgeAgent(BaseAgent):
         "ltv":       ["ltv","lifetime value","customer value"],
     }
 
-    def __init__(self, config=None, enable_mock: bool = True):
-        super().__init__(config, enable_mock)
+    def __init__(self, config, enable_mock=True):
+        super().__init__(config=config, enable_mock=enable_mock)
+        self._store = get_vector_store(config.vector_db)   # once at init
 
     def _detect_topics(self, query: str) -> list:
         q      = query.lower()
@@ -97,41 +99,59 @@ class KnowledgeAgent(BaseAgent):
         ]
         return topics if topics else ["retention"]
 
-    def _execute(self, request: AgentRequest) -> AgentResult:
-        topics  = self._detect_topics(request.query)
-        entries = []
-        sources = []
+    # def _execute(self, request: AgentRequest) -> AgentResult:
+    #     topics  = self._detect_topics(request.query)
+    #     entries = []
+    #     sources = []
 
-        for topic in topics:
-            if self.enable_mock:
-                entry = MOCK_KNOWLEDGE_BASE.get(topic)
-                if entry:
-                    entries.append({"topic": topic, **entry})
-                    sources.append(entry.get("source", topic))
-            # production: vector store search goes here
+    #     for topic in topics:
+    #         if self.enable_mock:
+    #             entry = MOCK_KNOWLEDGE_BASE.get(topic)
+    #             if entry:
+    #                 entries.append({"topic": topic, **entry})
+    #                 sources.append(entry.get("source", topic))
+    #         # production: vector store search goes here
 
-        if not entries:
-            return AgentResult(
-                agent_name = self.name,
-                success    = True,
-                summary    = "No knowledge base entries found "
-                             "for this query.",
-                sources    = [],
-                confidence = 0.5,
-            )
+    #     if not entries:
+    #         return AgentResult(
+    #             agent_name = self.name,
+    #             success    = True,
+    #             summary    = "No knowledge base entries found "
+    #                          "for this query.",
+    #             sources    = [],
+    #             confidence = 0.5,
+    #         )
 
-        summary = self._build_summary(entries)
+    #     summary = self._build_summary(entries)
 
-        return AgentResult(
-            agent_name = self.name,
-            success    = True,
-            data       = {"knowledge": entries},
-            summary    = summary,
-            sources    = sources,
-            confidence = 0.88,
-            metadata   = {"topics_found": topics},
+    #     return AgentResult(
+    #         agent_name = self.name,
+    #         success    = True,
+    #         data       = {"knowledge": entries},
+    #         summary    = summary,
+    #         sources    = sources,
+    #         confidence = 0.88,
+    #         metadata   = {"topics_found": topics},
+    #     )
+    def execute(self, request: AgentRequest) -> AgentResult:
+        results  = similarity_search(self._store, request.query, k=5)
+        relevant = [(doc, score) for doc, score in results
+                    if score >= 0.70]               # ← relevance threshold
+
+        if not relevant:
+            return AgentResult(success=True, summary="No relevant docs found.",
+                               confidence=0.0, ...)
+
+        docs_text = "\n\n".join(
+            f"[{i+1}] (score={s:.2f})\n{d.page_content}"
+            for i,(d,s) in enumerate(relevant)
         )
-
+        avg_conf = round(sum(s for _,s in relevant) / len(relevant), 2)
+        sources  = [f"{d.metadata.get('product','?')} — {d.metadata.get('topic','?')}"
+                    for d,_ in relevant]
+        return AgentResult(success=True, summary=docs_text,
+                           confidence=avg_conf, sources=sources,...)
+    
     def _build_summary(self, entries: List[Dict]) -> str:
         parts = ["📚 **Business Context**"]
         for entry in entries:

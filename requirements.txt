@@ -56,3 +56,17 @@ python-multipart>=0.0.9
 # psycopg2-binary>=2.9.9
 # sqlalchemy>=2.0.0
 # langchain-postgres>=0.0.9
+
+# Remove:
+chromadb>=0.4.0
+faiss-cpu>=1.7.4
+
+# Add:
+pgvector>=0.3.0
+psycopg2-binary>=2.9.9
+sqlalchemy>=2.0.0
+langchain-postgres>=0.0.9
+
+# Add (only needed when USE_MCP=true):
+langchain-mcp-adapters
+mcp
