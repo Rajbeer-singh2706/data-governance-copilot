@@ -24,8 +24,10 @@ from graph.state import AgentState
 from graph.nodes import (
     pre_hook_node,
     supervisor_node,
-    information_node, knowledge_node,
-    metadata_node,    capacity_node,
+    information_node, 
+    knowledge_node,
+    metadata_node,    
+    capacity_node,
     rule_node,
     auto_ticket_node,
     synthesizer_node,
@@ -73,7 +75,6 @@ def route_to_agents(state: AgentState):
  
  
 # ── Graph assembly ─────────────────────────────────────────────────────────
- 
 def build_graph():
     """Compile the full LangGraph StateGraph with all Day 13 nodes."""
     workflow = StateGraph(AgentState)

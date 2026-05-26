@@ -1,20 +1,36 @@
-import os 
+"""
+src/config/settings.py
+Application configuration — loaded once at import time.
+
+All values come from environment variables (or .env file via python-dotenv).
+Defaults are chosen to work out-of-the-box in local dev with ENABLE_MOCK=true.
+"""
+import os
 from dataclasses import dataclass, field
-from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
-#load_dotenv(r'D:\secrets\global.env')
+
 
 @dataclass
 class LLMConfig:
-    provider:      str   = os.getenv("LLM_PROVIDER", "openai")
-    primary_model: str   = os.getenv("LLM_MODEL",    "gpt-4o")  # renamed from model
-    api_key:       str   = os.getenv("OPENAI_API_KEY", "")
-    temperature:   float = 0.0           # was 0.1 — changed for determinism
+    """LLM provider configuration. Supports 'groq' and 'openai'."""
+
+    provider:      str   = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "groq"))
+    primary_model: str   = field(default_factory=lambda: os.getenv(
+        "LLM_MODEL", "llama-3.3-70b-versatile"   # plain model name, no prefix
+    ))
+    # API key — resolves from the right env var based on provider
+    api_key:       str   = field(default_factory=lambda: (
+        os.getenv("GROQ_API_KEY", "")
+        if os.getenv("LLM_PROVIDER", "groq").lower() == "groq"
+        else os.getenv("OPENAI_API_KEY", "")
+    ))
+
+    temperature:   float = 0.0
     max_tokens:    int   = 4096
-    timeout:       int   = 30            # NEW: per-call timeout seconds
-    max_retries:   int   = 3             # NEW: retries before next fallback
+    timeout:       int   = 30
+    max_retries:   int   = 3
 
     fallback_models: list = field(default_factory=lambda: [
         "gpt-4o-mini",
@@ -23,49 +39,56 @@ class LLMConfig:
     ])
 
     @property
-    def model(self) -> str:              # backward-compat alias
+    def model(self) -> str:
+        """Backward-compat alias for primary_model."""
         return self.primary_model
+
 
 @dataclass
 class DatabricksConfig:
-    host:      str = os.getenv("DATABRICKS_HOST",  "")
-    token:     str = os.getenv("DATABRICKS_TOKEN", "")
-    http_path: str = os.getenv("DATABRICKS_HTTP_PATH", "")
-    catalog:   str = os.getenv("DATABRICKS_CATALOG","main")
-    schema:    str = os.getenv("DATABRICKS_SCHEMA","analytics")
+    host:      str = field(default_factory=lambda: os.getenv("DATABRICKS_HOST", ""))
+    token:     str = field(default_factory=lambda: os.getenv("DATABRICKS_TOKEN", ""))
+    http_path: str = field(default_factory=lambda: os.getenv("DATABRICKS_HTTP_PATH", ""))
+    catalog:   str = field(default_factory=lambda: os.getenv("DATABRICKS_CATALOG", "main"))
+    schema:    str = field(default_factory=lambda: os.getenv("DATABRICKS_SCHEMA", "analytics"))
+
 
 @dataclass
 class RedisConfig:
-    host:        str  = os.getenv("REDIS_HOST",     "localhost")
-    port:        int  = int(os.getenv("REDIS_PORT", "6379"))
-    password:    str  = os.getenv("REDIS_PASSWORD", "")
+    host:        str  = field(default_factory=lambda: os.getenv("REDIS_HOST", "localhost"))
+    port:        int  = field(default_factory=lambda: int(os.getenv("REDIS_PORT", "6379")))
+    password:    str  = field(default_factory=lambda: os.getenv("REDIS_PASSWORD", ""))
     db:          int  = 0
     ttl_seconds: int  = 3600
-    enabled:     bool = os.getenv("REDIS_ENABLED", "true").lower() == "true" 
+    # Set REDIS_ENABLED=false in .env if you don't have Redis running locally
+    enabled:     bool = field(default_factory=lambda: (
+        os.getenv("REDIS_ENABLED", "true").lower() == "true"
+    ))
 
     @property
     def url(self) -> str:
-        print(f"URL: {self.host}, {self.password}, {self.db}")
         if self.password:
             return f"redis://:{self.password}@{self.host}:{self.port}/{self.db}"
         return f"redis://{self.host}:{self.port}/{self.db}"
-    
+
+
 @dataclass
 class AppConfig:
-    debug:       bool = os.getenv("DEBUG","false").lower()=="true"
-    log_level:   str  = os.getenv("LOG_LEVEL","INFO")
-    enable_mock: bool = os.getenv("ENABLE_MOCK","true").lower()=="true"
+    debug:       bool = field(default_factory=lambda: os.getenv("DEBUG", "false").lower() == "true")
+    log_level:   str  = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
+    enable_mock: bool = field(default_factory=lambda: os.getenv("ENABLE_MOCK", "true").lower() == "true")
 
     llm:         LLMConfig        = field(default_factory=LLMConfig)
     databricks:  DatabricksConfig = field(default_factory=DatabricksConfig)
-    redis:       RedisConfig      = field(default_factory=RedisConfig)  # NEW
+    redis:       RedisConfig      = field(default_factory=RedisConfig)
 
-# Singleton — created once, imported everywhere
+
+# Singleton — created once at import time, used everywhere
 config = AppConfig()
-print(config)
 
 
-# Data product registry
+# ── Data product registry ──────────────────────────────────────────────────
+
 DATA_PRODUCTS = {
     "retention": {
         "description": "% of customers renewing subscriptions",

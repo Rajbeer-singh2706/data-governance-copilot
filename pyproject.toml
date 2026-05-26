@@ -1,3 +1,10 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Data Governance Copilot — pyproject.toml
+#
+# Python version: 3.12  (pinned — see Dockerfile comment for rationale)
+# Package manager: uv   (fastest resolver; compatible with pip)
+# ═══════════════════════════════════════════════════════════════════════════
+
 [build-system]
 requires      = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
@@ -5,28 +12,69 @@ build-backend = "setuptools.build_meta"
 [project]
 name            = "data-governance-copilot"
 version         = "0.1.0"
-requires-python = ">=3.11"
-dependencies    = [
+description     = "Agentic AI Data Governance & Analytics Assistant"
+requires-python = ">=3.12,<3.13"      # locked to 3.12 — 3.13 has C-ext friction
+
+dependencies = [
+    # ── Core utilities ────────────────────────────────────────────────
     "python-dotenv>=1.0.0",
     "requests>=2.31.0",
-    "pytest>=8.0.0",
-    "streamlit>=1.35.0",
-    "langgraph[sqlite]>=1.2.0",
-    "langchain>=1.3.1",
-    "langchain-core>=1.4.0",
-    "langchain-openai>=1.2.1",
-    "langchain-community>=0.4.1",
-    "openai>=2.37.0",
-    "langsmith>=0.8.5",
+    "pydantic>=2.0.0,<3.0.0",
+
+    # ── LangChain ecosystem ───────────────────────────────────────────
+    "langchain==0.3.27",
+    "langchain-core==0.3.76",
+    "langchain-community==0.3.29",
+    "langchain-openai==0.3.33",
+    "langsmith>=0.2.0",
+
+    # ── LangGraph + memory ────────────────────────────────────────────
+    "langgraph>=1.2.0",
     "langgraph-checkpoint-sqlite>=3.1.0",
-    "pydantic>=2.13.4",
+
+    # ── LLM providers ─────────────────────────────────────────────────
+    "langchain-groq>=1.1.0",         # Groq — dev default (fast, free tier)
+    "langchain-litellm>=0.3.0",      # LiteLLM — multi-provider fallback (prod)
+
+    # ── Caching ───────────────────────────────────────────────────────
     "redis>=5.0.0",
-    "hiredis>=2.3.0",
-]   
+    "hiredis>=2.3.0",                # C-accelerated Redis protocol parser
+
+    # ── UI ────────────────────────────────────────────────────────────
+    "streamlit>=1.35.0",
+]
+
+[project.optional-dependencies]
+# Install with: uv pip install -e ".[dev]"
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+# Day 16+ FastAPI
+api = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "slowapi>=0.1.9",
+    "sse-starlette>=2.1.0",
+    "python-multipart>=0.0.9",
+]
+
+# Day 18+ pgvector
+pgvector = [
+    "pgvector>=0.3.0",
+    "psycopg2-binary>=2.9.9",
+    "sqlalchemy>=2.0.0",
+    "langchain-postgres>=0.0.9",
+]
 
 [tool.setuptools.packages.find]
-where = ["src"]               # all source code lives in src/
+where = ["src"]               # all source code lives under src/
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]          # pytest can find src/ packages
-testpaths  = ["tests"]        # pytest only looks in tests/
+pythonpath = ["src"]          # pytest can find src/ packages without sys.path hacks
+testpaths  = ["tests"]
+
+[tool.uv]
+# uv-specific: prefer binary wheels, skip source builds where possible
+compile-bytecode = true

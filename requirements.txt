@@ -1,18 +1,43 @@
-# 
+# ── Core ──────────────────────────────────────────────────────────────────
 python-dotenv>=1.0.0
 requests>=2.31.0
-pytest>=8.0.0
-streamlit>=1.35.0
-langgraph[sqlite]
-langchain
-langchain-core
-langchain-openai
-langchain-community
-litellm
-openai
-langsmith
-langgraph-checkpoint-sqlite
-pydantic
-redis>=5.0.0 
+pydantic>=2.0.0,<3.0.0
+
+# ── LangChain ecosystem ───────────────────────────────────────────────────
+langchain==0.3.27
+langchain-core==0.3.76
+langchain-community==0.3.29
+langchain-openai==0.3.33
+langsmith>=0.2.0
+
+# ── LangGraph + memory ────────────────────────────────────────────────────
+langgraph>=1.2.0
+langgraph-checkpoint-sqlite>=3.1.0
+
+# ── LLM providers ─────────────────────────────────────────────────────────
+langchain-groq>=1.1.0           # Groq — dev default (fast, free tier)
+langchain-litellm>=0.3.0        # LiteLLM — multi-provider fallback (prod)
+
+# ── Caching ───────────────────────────────────────────────────────────────
+redis>=5.0.0
 hiredis>=2.3.0
-langchain-litellm
+
+# ── UI ────────────────────────────────────────────────────────────────────
+streamlit>=1.35.0
+
+# ── Testing ───────────────────────────────────────────────────────────────
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+
+# ── API (Day 16+) — uncomment when needed ─────────────────────────────────
+# fastapi>=0.111.0
+# uvicorn[standard]>=0.30.0
+# slowapi>=0.1.9
+# sse-starlette>=2.1.0
+# python-multipart>=0.0.9
+
+# ── pgvector (Day 18+) — uncomment when needed ────────────────────────────
+# pgvector>=0.3.0
+# psycopg2-binary>=2.9.9
+# sqlalchemy>=2.0.0
+# langchain-postgres>=0.0.9

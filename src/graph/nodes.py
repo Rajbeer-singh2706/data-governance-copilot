@@ -247,7 +247,8 @@ def synthesizer_node(state: AgentState) -> dict:
     avg_conf   = round(sum(all_scores) / len(all_scores), 2) if all_scores else 0.0
 
     # ── LiteLLM synthesis (fallback to string-join) ────────────────────
-    if not os.getenv("OPENAI_API_KEY", "") or not successful:
+    #if not os.getenv("OPENAI_API_KEY", "") or not successful:
+    if not os.getenv("GROQ_API_KEY", "") or not successful:
         parts   = [r.get("summary", "") for r in successful]
         summary = "\n\n---\n\n".join(parts) if parts else "No results found."
     else:

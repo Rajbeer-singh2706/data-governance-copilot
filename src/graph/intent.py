@@ -1,12 +1,15 @@
 """
-Day 13: GPT-4o structured output intent classifier.
- 
-Replaces the Day 12 keyword loop with:
-  • Pydantic IntentClassification schema
-  • ChatOpenAI.with_structured_output()
-  • Automatic fallback to keyword matching if OPENAI_API_KEY is absent
-    or the LLM call fails (network error, rate limit, etc.)
- 
+src/graph/intent.py
+Day 13: Structured output intent classifier.
+
+Uses the LLM factory (get_structured_llm) — works with Groq OR OpenAI,
+controlled by LLM_PROVIDER env var.
+
+Flow:
+  1. No API key found → keyword fallback immediately (dev / CI friendly)
+  2. LLM succeeds     → return IntentClassification
+  3. LLM fails        → keyword fallback + log reason
+
 LangSmith traces every call automatically via LANGCHAIN_TRACING_V2=true.
 """
 
@@ -15,10 +18,12 @@ from __future__ import annotations
 import os
 from enum import Enum
 from typing import List
- 
+
 from pydantic import BaseModel, Field
 
+
 # ── 1. Intent enum (unchanged — routing.py depends on these values) ────────
+
 class QueryIntent(str, Enum):
     WRITE_TICKET     = "write_ticket"
     WRITE_METADATA   = "write_metadata"
@@ -31,11 +36,13 @@ class QueryIntent(str, Enum):
     METRIC_ANALYSIS  = "metric_analysis"
     UNKNOWN          = "unknown"
 
+
 # ── 2. Structured output schema ────────────────────────────────────────────
+
 class IntentClassification(BaseModel):
     """
-    GPT-4o returns this exact shape via .with_structured_output().
-    Also used by the keyword fallback so callers see one consistent type.
+    Structured output schema for intent classification.
+    Returned by both the LLM chain and the keyword fallback.
     """
     intent: QueryIntent = Field(
         description="Primary intent of the user's query."
@@ -58,17 +65,18 @@ class IntentClassification(BaseModel):
         description="One-sentence rationale for the intent chosen.",
     )
 
+
 # ── 3. System prompt ───────────────────────────────────────────────────────
- 
+
 _SYSTEM = """\
 You are an intent classifier for an enterprise Data Governance AI Copilot.
- 
+
 Available data products:
   • retention  — customer renewal / churn metrics  (GRR, NRR, churn rate)
   • bookings   — signed-contract revenue           (ARR, MRR, net-new bookings)
   • cac        — customer acquisition cost         (blended CAC, payback period)
   • ltv        — customer lifetime value            (avg LTV, LTV:CAC ratio)
- 
+
 Intent taxonomy — pick EXACTLY ONE:
   write_ticket      create / file a Jira ticket, bug report, or incident
   write_metadata    update owner, description, or classification in Collibra
@@ -80,7 +88,7 @@ Intent taxonomy — pick EXACTLY ONE:
   knowledge_lookup  definitions, explanations, "what is X / how does X work"
   metric_analysis   metric values, trends, comparisons, anomalies
   unknown           cannot determine intent from the query
- 
+
 Rules:
   1. Return exactly ONE intent.
   2. Populate data_products only when clearly referenced; else leave empty.
@@ -89,16 +97,31 @@ Rules:
   5. Set confidence < 0.60 and intent = unknown when genuinely uncertain.
 """
 
-# ── 4. Lazy singleton chain ────────────────────────────────────────────────
-# Built once on first call; avoids any import-time API hits or slow imports.
+# ── 4. Helper: resolve active API key ─────────────────────────────────────
+
+def _get_active_api_key() -> str:
+    """
+    Return whichever API key is configured based on LLM_PROVIDER.
+    Supports groq and openai providers.
+    """
+    provider = os.getenv("LLM_PROVIDER", "openai").lower()
+    if provider == "groq":
+        return os.getenv("GROQ_API_KEY", "")
+    return os.getenv("OPENAI_API_KEY", "")
+
+
+# ── 5. Lazy singleton chain ────────────────────────────────────────────────
+
 _chain = None  # type: ignore[assignment]
- 
+
+
 def _build_chain():
     """Construct prompt | llm.with_structured_output chain."""
     from core.llm_factory import get_structured_llm
     from config.settings  import config
     from langchain_core.prompts import ChatPromptTemplate
 
+    # get_structured_llm now returns llm.with_structured_output(schema)
     structured_llm = get_structured_llm(config.llm, IntentClassification)
 
     prompt = ChatPromptTemplate.from_messages([
@@ -106,47 +129,51 @@ def _build_chain():
         ("human", "Classify this query:\n{query}"),
     ])
     return prompt | structured_llm
-    #return prompt | llm.with_structured_output(IntentClassification)
 
-# ── 5. Public API ──────────────────────────────────────────────────────────
+
+# ── 6. Public API ──────────────────────────────────────────────────────────
+
 def classify_intent_gpt(query: str) -> IntentClassification:
     """
-    Classify intent via GPT-4o structured output.
- 
+    Classify intent via structured LLM output (Groq or OpenAI).
+
     Flow:
       1. No API key → keyword fallback immediately (dev / CI friendly)
       2. LLM succeeds → return IntentClassification
       3. LLM fails    → keyword fallback + log reason
     """
     global _chain
- 
-    if not os.getenv("OPENAI_API_KEY", ""):
-        return _keyword_fallback(query, reason="OPENAI_API_KEY not set")
- 
+
+    # Check the correct API key based on configured provider
+    if not _get_active_api_key():
+        provider = os.getenv("LLM_PROVIDER", "openai")
+        return _keyword_fallback(query, reason=f"No API key set for provider '{provider}'")
+
     try:
         if _chain is None:
             _chain = _build_chain()
         result: IntentClassification = _chain.invoke({"query": query})
         return result
- 
+
     except Exception as exc:  # noqa: BLE001
-        print(f"[intent] GPT-4o failed — falling back to keywords. Error: {exc}")
+        print(f"[intent] LLM classification failed — falling back to keywords. Error: {exc}")
         return _keyword_fallback(query, reason=str(exc))
 
+
 # ── Backward-compat shims (nodes.py + tests import these) ─────────────────
- 
+
 def classify_intent(query: str) -> str:
     """Return intent string — used by supervisor_node."""
     return classify_intent_gpt(query).intent.value
- 
- 
+
+
 def extract_products(query: str) -> List[str]:
     """Return product list — used by supervisor_node."""
     return classify_intent_gpt(query).data_products
 
 
-# ── 6. Keyword fallback (Day 12 logic, hardened) ──────────────────────────
- 
+# ── 7. Keyword fallback (Day 12 logic, hardened) ──────────────────────────
+
 _INTENT_RULES: dict = {
     QueryIntent.WRITE_TICKET:     [
         "create ticket", "create a bug", "open bug",
@@ -185,7 +212,7 @@ _INTENT_RULES: dict = {
         "pattern", "anomaly", "metrics",
     ],
 }
- 
+
 _PRODUCT_KEYWORDS: dict = {
     "retention": "retention", "churn": "retention",
     "grr": "retention",       "nrr": "retention",
@@ -194,20 +221,20 @@ _PRODUCT_KEYWORDS: dict = {
     "cac": "cac",             "payback": "cac",
     "ltv": "ltv",             "lifetime": "ltv",
 }
- 
- 
+
+
 def _keyword_fallback(query: str, reason: str = "") -> IntentClassification:
     """Pure keyword matching — O(n) scan, no API call."""
     q = query.lower()
- 
+
     intent = QueryIntent.UNKNOWN
     for candidate, keywords in _INTENT_RULES.items():
         if any(kw in q for kw in keywords):
             intent = candidate
             break
- 
+
     products = list({p for kw, p in _PRODUCT_KEYWORDS.items() if kw in q})
- 
+
     return IntentClassification(
         intent=intent,
         data_products=products or [],
