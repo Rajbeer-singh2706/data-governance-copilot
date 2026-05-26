@@ -55,7 +55,7 @@ class DatabricksConfig:
 
 @dataclass
 class RedisConfig:
-    host:        str  = field(default_factory=lambda: os.getenv("REDIS_HOST", "redis"))
+    host:        str  = field(default_factory=lambda: os.getenv("REDIS_HOST", "localhost"))
     port:        int  = field(default_factory=lambda: int(os.getenv("REDIS_PORT", "6379")))
     password:    str  = field(default_factory=lambda: os.getenv("REDIS_PASSWORD", ""))
     db:          int  = 0
@@ -67,11 +67,6 @@ class RedisConfig:
 
     @property
     def url(self) -> str:
-        print(f"redis://{self.host}:{self.port}/{self.db}")
-        print(f"self.host: {self.host}")
-        print(f"self.password: {self.password}")
-        print(f"self.db; {self.db}")
-
         if self.password:
             return f"redis://:{self.password}@{self.host}:{self.port}/{self.db}"
         return f"redis://{self.host}:{self.port}/{self.db}"
@@ -90,7 +85,6 @@ class AppConfig:
 
 # Singleton — created once at import time, used everywhere
 config = AppConfig()
-print(config)
 
 # ── Data product registry ──────────────────────────────────────────────────
 
