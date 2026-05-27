@@ -106,4 +106,4 @@ async def teams_webhook(request: Request,
 @router.get("/health")
 async def teams_health():
     return {"status":"ok","bot":"Data Governance Copilot",
-            "mock_mode":config.enable_mock,"hmac_enabled":bool(_SECRET)}
+            "hmac_enabled":bool(_SECRET)}

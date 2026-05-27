@@ -217,14 +217,7 @@ st.divider()
 with st.sidebar:
     st.header("⚙️ Settings")
 
-    mock_mode = st.toggle(
-        "Mock Mode",
-        value=config.enable_mock,
-        help="Use simulated data — no real credentials needed",
-    )
-    if mock_mode != config.enable_mock:
-        config.enable_mock = mock_mode
-        st.rerun()
+    st.caption("🔌 Live mode — configure credentials in .env")
 
     time_range = st.selectbox(
         "Time Range",

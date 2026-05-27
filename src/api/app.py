@@ -150,10 +150,10 @@ async def agents_status(request: Request):
     if redis:
         try: redis.ping(); redis_ok=True
         except: pass
-    agents = [{"name":n,"status":"ready","mock":config.enable_mock}
+    agents = [{"name":n,"status":"ready"}
               for n in ["information","knowledge","metadata","capacity","rule"]]
     return {"status":"ok","version":"1.0.0","environment":config.environment,
-            "mock_mode":config.enable_mock,"redis_ok":redis_ok,
+            "redis_ok":redis_ok,
             "agents":agents,"daily_tokens":get_daily_usage(redis),
             "timestamp":datetime.utcnow().isoformat()+"Z"}
 

@@ -1,7 +1,6 @@
 # tests/test_day17.py
 import json, os, sys, pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-os.environ.setdefault("ENABLE_MOCK","true")
 os.environ.setdefault("OPENAI_API_KEY","")
 
 

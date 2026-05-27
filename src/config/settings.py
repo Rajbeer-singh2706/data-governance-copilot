@@ -3,7 +3,7 @@ src/config/settings.py
 Application configuration — loaded once at import time.
 
 All values come from environment variables (or .env file via python-dotenv).
-Defaults are chosen to work out-of-the-box in local dev with ENABLE_MOCK=true.
+All values come from environment variables. See .env.example for required vars.
 """
 import os
 from dataclasses import dataclass, field
@@ -93,7 +93,6 @@ class VectorDBConfig:
 class AppConfig:
     debug:       bool = field(default_factory=lambda: os.getenv("DEBUG", "false").lower() == "true")
     log_level:   str  = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
-    enable_mock: bool = field(default_factory=lambda: os.getenv("ENABLE_MOCK", "true").lower() == "true")
     environment: str  = field(default_factory=lambda: os.getenv("ENVIRONMENT", "development"))  # FIX: was missing
 
     llm:         LLMConfig        = field(default_factory=LLMConfig)

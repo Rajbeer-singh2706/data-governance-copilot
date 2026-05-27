@@ -1,66 +1,93 @@
 """
 src/graph/nodes.py
-Day 14 changes on top of Day 13:
-  • information_node  — @cached_node(ttl=1800)  added
-  • knowledge_node    — @cached_node(ttl=7200)  added
-  • metadata_node     — @cached_node(ttl=3600)  added
-  • synthesizer_node  — uses get_llm() from llm_factory instead of ChatOpenAI
+All LangGraph node functions.
 
-Day 13 (unchanged in Day 14):
-  • pre_hook_node  — guardrails + PII redaction + start_time
-  • supervisor_node — GPT-4o intent classification
-  • post_hook_node — execution_ms audit log
-  • capacity_node, rule_node, auto_ticket_node — unchanged
+Agent singletons are initialized at import time.
+If a required service (Databricks, Jira, Collibra, pgvector) is not
+configured, the agent raises EnvironmentError at construction time —
+this is caught here and results in AgentResult(success=False) for
+every call to that agent, surfaced clearly to the user.
 """
 from __future__ import annotations
 
 import os
 import time
 
-from core.base_agent import AgentRequest
-from core.cache      import cached_node          # Day 14
-from core.retry import retry_agent_call    
+from core.base_agent import AgentRequest, AgentResult
+from core.cache import cached_node
+from core.retry import retry_agent_call
 
 from agents.information_agent import InformationAgent
-from agents.knowledge_agent   import KnowledgeAgent
-from agents.metadata_agent    import MetadataAgent
-from agents.capacity_agent    import CapacityAgent
-from agents.rule_agent        import RuleAgent
-from config.settings          import config
-from graph.state              import AgentState
+from agents.knowledge_agent import KnowledgeAgent
+from agents.metadata_agent import MetadataAgent
+from agents.capacity_agent import CapacityAgent
+from agents.rule_agent import RuleAgent
+from config.settings import config
+from graph.state import AgentState
 
 
-# ── Agent singletons ──────────────────────────────────────────────────────
+# ── Agent singletons — fail loudly at startup if config is missing ────────
+
+def _try_init(cls, **kwargs):
+    """Attempt to construct an agent; return a stub on EnvironmentError."""
+    try:
+        return cls(**kwargs)
+    except EnvironmentError as exc:
+        import logging
+        logging.getLogger("nodes").warning(
+            "[nodes] %s not initialized: %s", cls.__name__, exc
+        )
+        return _UnconfiguredAgent(cls.name if hasattr(cls, "name") else cls.__name__, str(exc))
+
+
+class _UnconfiguredAgent:
+    """Stands in for an agent whose credentials are not configured."""
+    def __init__(self, name: str, reason: str):
+        self._name = name
+        self._reason = reason
+
+    def execute(self, request: AgentRequest) -> AgentResult:
+        return AgentResult(
+            agent_name=self._name,
+            success=False,
+            error=self._reason,
+            summary=(
+                f"⚠️ **{self._name}** is not configured.\n"
+                f"  Reason: {self._reason}\n"
+                f"  Set the required environment variables and restart."
+            ),
+        )
+
 
 _agents = {
-    "information": InformationAgent(config=config, enable_mock=config.enable_mock),
-    "knowledge":   KnowledgeAgent(  config=config, enable_mock=config.enable_mock),
-    "metadata":    MetadataAgent(   config=config, enable_mock=config.enable_mock),
-    "capacity":    CapacityAgent(   config=config, enable_mock=config.enable_mock),
-    "rule":        RuleAgent(       config=config, enable_mock=config.enable_mock),
+    "information": _try_init(InformationAgent, config=config),
+    "knowledge":   _try_init(KnowledgeAgent,   config=config),
+    "metadata":    _try_init(MetadataAgent,     config=config),
+    "capacity":    _try_init(CapacityAgent,     config=config),
+    "rule":        RuleAgent(config=config),   # always succeeds — no external deps
 }
 
 
 def _build_request(state: AgentState) -> AgentRequest:
     return AgentRequest(
-        query         = state["query"],
-        intent        = state.get("intent", ""),
-        query_id      = state.get("query_id", ""),
-        data_products = state.get("data_products", []),
-        time_range    = state.get("time_range", "last_month"),
+        query=state["query"],
+        intent=state.get("intent", ""),
+        query_id=state.get("query_id", ""),
+        data_products=state.get("data_products", []),
+        time_range=state.get("time_range", "last_month"),
     )
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# DAY 13 — pre_hook_node (unchanged)
+# pre_hook_node
 # ══════════════════════════════════════════════════════════════════════════
 def pre_hook_node(state: AgentState) -> dict:
     """Guardrails + PII redaction + start_time recording."""
     from core.guardrails import run_guardrails
 
     raw_query = state.get("query", "").strip()
-    t_start   = time.time()
-    result    = run_guardrails(raw_query)
+    t_start = time.time()
+    result = run_guardrails(raw_query)
 
     if not result.passed:
         print(f"[pre_hook] BLOCKED — {result.reason}")
@@ -84,19 +111,18 @@ def pre_hook_node(state: AgentState) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# DAY 13 — supervisor_node (unchanged)
+# supervisor_node
 # ══════════════════════════════════════════════════════════════════════════
-
-from graph.intent  import classify_intent_gpt
+from graph.intent import classify_intent_gpt
 from graph.routing import INTENT_AGENT_MAP
 
 
 def supervisor_node(state: AgentState) -> dict:
-    """GPT-4o intent classification + agent routing."""
+    """Groq/GPT-4o intent classification + agent routing."""
     classification = classify_intent_gpt(state["query"])
-    intent   = classification.intent.value
+    intent = classification.intent.value
     products = state.get("data_products") or classification.data_products or []
-    agents   = INTENT_AGENT_MAP.get(intent, ["information", "knowledge"])
+    agents = INTENT_AGENT_MAP.get(intent, ["information", "knowledge"])
 
     print(
         f"[supervisor] intent={intent} | conf={classification.confidence:.2f} | "
@@ -112,17 +138,16 @@ def supervisor_node(state: AgentState) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# DAY 14 — @cached_node applied to three read-only agent nodes
+# Cached agent nodes
 # ══════════════════════════════════════════════════════════════════════════
 
-@cached_node("information_agent", ttl=1800)     # 30 min — SQL results
+@cached_node("information_agent", ttl=1800)
 def information_node(state: AgentState) -> dict:
     result = retry_agent_call(
         _agents["information"].execute,
         _build_request(state),
         max_retries=3,
     )
-    # FIX: result.data may be None — guard with `or {}`
     data = (result.data or {}) if result.success else {}
     return {
         "agent_results": [result.to_dict()],
@@ -134,14 +159,13 @@ def information_node(state: AgentState) -> dict:
     }
 
 
-@cached_node("knowledge_agent", ttl=7200)       # 2 hrs — docs change slowly
+@cached_node("knowledge_agent", ttl=7200)
 def knowledge_node(state: AgentState) -> dict:
     result = retry_agent_call(
         _agents["knowledge"].execute,
         _build_request(state),
         max_retries=3,
     )
-    # FIX: result.data may be None — guard with `or {}`
     data = (result.data or {}) if result.success else {}
     return {
         "agent_results": [result.to_dict()],
@@ -153,14 +177,13 @@ def knowledge_node(state: AgentState) -> dict:
     }
 
 
-@cached_node("metadata_agent", ttl=3600)        # 1 hr — Collibra metadata
+@cached_node("metadata_agent", ttl=3600)
 def metadata_node(state: AgentState) -> dict:
     result = retry_agent_call(
         _agents["metadata"].execute,
         _build_request(state),
         max_retries=3,
     )
-    # FIX: result.data may be None — guard with `or {}`
     data = (result.data or {}) if result.success else {}
     return {
         "agent_results": [result.to_dict()],
@@ -171,9 +194,6 @@ def metadata_node(state: AgentState) -> dict:
         ],
     }
 
-# ── Uncached agent nodes ───────────────────────────────────────────────────
-# capacity_node: Jira tickets open/close constantly — never cache
-# rule_node: rule mutations possible between calls — never cache
 
 def capacity_node(state: AgentState) -> dict:
     result = _agents["capacity"].execute(_build_request(state))
@@ -191,22 +211,24 @@ def rule_node(state: AgentState) -> dict:
     }
 
 
-# ── Auto-ticket node (unchanged) ───────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════
+# auto_ticket_node
+# ══════════════════════════════════════════════════════════════════════════
 
 def auto_ticket_node(state: AgentState) -> dict:
     anomalies = state.get("anomalies", [])
-    approved  = state.get("approved", False)
-    products  = state.get("data_products", ["unknown"])
+    approved = state.get("approved", False)
+    products = state.get("data_products", ["unknown"])
 
     critical = [a for a in anomalies if any(
         kw in a.lower() for kw in
-        ["threshold","missing","below","risk","drop","fail"]
+        ["threshold", "missing", "below", "risk", "drop", "fail"]
     )]
 
     if not critical:
         return {"auto_tickets": [], "pending_action": None}
 
-    if not approved:                             # ← HITL gate
+    if not approved:
         return {
             "pending_action": {
                 "action":    "create_jira_tickets",
@@ -221,19 +243,19 @@ def auto_ticket_node(state: AgentState) -> dict:
             "auto_tickets": [],
         }
 
-    # approved=True — create tickets
     created = []
     for anomaly in critical:
         result = _agents["capacity"].create_ticket_from_anomaly(
             anomaly, products[0]
         )
         if result.success:
-            created.append(result.data.get("ticket_id","?"))
+            created.append(result.data.get("ticket_id", "?"))
 
     return {"auto_tickets": created, "pending_action": None, "approved": True}
 
+
 # ══════════════════════════════════════════════════════════════════════════
-# DAY 14 — synthesizer_node uses get_llm() instead of ChatOpenAI directly
+# synthesizer_node
 # ══════════════════════════════════════════════════════════════════════════
 
 _SYNTH_SYSTEM = """\
@@ -263,63 +285,57 @@ Agent results:
 Write a clear, accurate answer to the original query.
 """
 
-_synth_llm = None   # lazy singleton
+_synth_llm = None
 
 
 def _get_synth_llm():
     global _synth_llm
     if _synth_llm is None:
-        from core.llm_factory import get_llm   # Day 14: use LiteLLM factory
+        from core.llm_factory import get_llm
         _synth_llm = get_llm(config.llm, streaming=False)
     return _synth_llm
 
 
 def synthesizer_node(state: AgentState) -> dict:
-    """
-    GPT-4o synthesis via LiteLLM factory (Day 14).
-    Falls back to string-join when OPENAI_API_KEY is absent.
-    """
+    """Synthesis via LiteLLM (Groq primary). Falls back to string-join."""
     from langchain_core.messages import SystemMessage, HumanMessage
 
-    results   = state.get("agent_results", [])
-    query     = state["query"]
-    intent    = state.get("intent", "unknown")
-    products  = state.get("data_products", [])
-    tickets   = state.get("auto_tickets", [])
+    results = state.get("agent_results", [])
+    query = state["query"]
+    intent = state.get("intent", "unknown")
+    products = state.get("data_products", [])
+    tickets = state.get("auto_tickets", [])
 
-    successful     = [r for r in results if r.get("success") and r.get("summary")]
-    agent_context  = "\n\n".join(
+    successful = [r for r in results if r.get("success") and r.get("summary")]
+    agent_context = "\n\n".join(
         f"### {r['agent']}\n{r['summary']}" for r in successful
     ) if successful else "No agents returned successful results."
 
-    # Blend supervisor confidence + agent confidences
-    sup_conf   = state.get("confidence", 0.0)
-    scores     = [r.get("confidence", 0.0) for r in results if r.get("success")]
+    sup_conf = state.get("confidence", 0.0)
+    scores = [r.get("confidence", 0.0) for r in results if r.get("success")]
     all_scores = ([sup_conf] if sup_conf else []) + scores
-    avg_conf   = round(sum(all_scores) / len(all_scores), 2) if all_scores else 0.0
+    avg_conf = round(sum(all_scores) / len(all_scores), 2) if all_scores else 0.0
 
-    # ── LiteLLM synthesis (fallback to string-join) ────────────────────
-    #if not os.getenv("OPENAI_API_KEY", "") or not successful:
     if not os.getenv("GROQ_API_KEY", "") or not successful:
-        parts   = [r.get("summary", "") for r in successful]
+        parts = [r.get("summary", "") for r in successful]
         summary = "\n\n---\n\n".join(parts) if parts else "No results found."
     else:
         try:
-            llm  = _get_synth_llm()
+            llm = _get_synth_llm()
             msgs = [
                 SystemMessage(content=_SYNTH_SYSTEM),
                 HumanMessage(content=_SYNTH_HUMAN.format(
-                    query         = query,
-                    intent        = intent,
-                    products      = ", ".join(products) or "not specified",
-                    tickets       = ", ".join(tickets) if tickets else "none",
-                    agent_context = agent_context,
+                    query=query,
+                    intent=intent,
+                    products=", ".join(products) or "not specified",
+                    tickets=", ".join(tickets) if tickets else "none",
+                    agent_context=agent_context,
                 )),
             ]
             summary = llm.invoke(msgs).content.strip()
         except Exception as exc:
             print(f"[synthesizer] LiteLLM failed — string fallback. Error: {exc}")
-            parts   = [r.get("summary", "") for r in successful]
+            parts = [r.get("summary", "") for r in successful]
             summary = "\n\n---\n\n".join(parts) if parts else "No results found."
 
     history_entry = {
@@ -336,13 +352,13 @@ def synthesizer_node(state: AgentState) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# DAY 13 — post_hook_node (unchanged)
+# post_hook_node
 # ══════════════════════════════════════════════════════════════════════════
 
 def post_hook_node(state: AgentState) -> dict:
     """Compute execution_ms and emit structured audit log."""
-    t_end      = time.time()
-    t_start    = state.get("start_time", t_end)
+    t_end = time.time()
+    t_start = state.get("start_time", t_end)
     elapsed_ms = round((t_end - t_start) * 1000, 1)
 
     agents_used = [r.get("agent", "?") for r in state.get("agent_results", [])
@@ -350,7 +366,7 @@ def post_hook_node(state: AgentState) -> dict:
 
     print(
         f"[post_hook] query_id={state.get('query_id')} | "
-        f"intent={state.get('intent','n/a')} | "
+        f"intent={state.get('intent', 'n/a')} | "
         f"guardrail_passed={state.get('guardrail_passed', True)} | "
         f"agents={agents_used} | "
         f"confidence={state.get('confidence', 0.0):.2f} | "

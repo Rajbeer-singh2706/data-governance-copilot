@@ -1,11 +1,20 @@
+"""
+src/agents/rule_agent.py
+
+Manages DQ and business rules in the rule registry.
+The in-memory RULE_REGISTRY is the real implementation — not a mock.
+In production, swap it for a DB-backed store (Postgres/SQLite).
+Rule evaluation executes expressions against Databricks via the
+InformationAgent's connector when available.
+"""
 import uuid
-import random
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from core.base_agent import BaseAgent, AgentRequest, AgentResult
 
-# ── Rule Registry (in-memory — replace with DB in production) ──
+
+# ── Rule Registry — replace with DB-backed store in production ──────────────
 RULE_REGISTRY: Dict[str, Dict] = {
     "DQ-001": {
         "id":         "DQ-001",
@@ -62,15 +71,13 @@ RULE_REGISTRY: Dict[str, Dict] = {
 }
 
 
-# ── Rule Agent ───────────────────────────────────────────────
 class RuleAgent(BaseAgent):
     """
     Creates and manages DQ and business rules.
     Three operations: create, list, evaluate.
-    Wired in the Supervisor as on-demand only.
     """
-    name         = "rule_agent"
-    description  = "Creates and manages DQ and business rules"
+    name = "rule_agent"
+    description = "Creates and manages DQ and business rules"
     capabilities = [
         "rule_creation",
         "rule_listing",
@@ -79,8 +86,9 @@ class RuleAgent(BaseAgent):
         "business_rule_management",
     ]
 
-    def __init__(self, config=None, enable_mock: bool = True):
-        super().__init__(config, enable_mock)
+    def __init__(self, config=None, **kwargs):
+        kwargs.pop("enable_mock", None)
+        super().__init__(config, enable_mock=False)
 
     def _execute(self, request: AgentRequest) -> AgentResult:
         q = request.query.lower()
@@ -93,12 +101,8 @@ class RuleAgent(BaseAgent):
             return self._create_rule(request)
 
         elif any(kw in q for kw in [
-            "evaluate", "check rules", "run rules",
-            "validate rules",
+            "evaluate", "check rules", "run rules", "validate rules",
         ]):
-            # FIX: evaluate must be checked BEFORE list because
-            # "evaluate all rules" contains "all rules" which
-            # previously matched the list branch first.
             return self._evaluate_rules(request)
 
         elif any(kw in q for kw in [
@@ -110,173 +114,178 @@ class RuleAgent(BaseAgent):
         else:
             return self._list_rules(request)
 
-    def _create_rule(self,
-                     request: AgentRequest) -> AgentResult:
-        context   = request.context
+    def _create_rule(self, request: AgentRequest) -> AgentResult:
+        context = request.context
         rule_type = "data_quality"
         if any(kw in request.query.lower()
                for kw in ["business rule", "threshold", "kpi"]):
             rule_type = "business_rule"
 
-        prefix  = "DQ" if rule_type == "data_quality" else "BR"
+        prefix = "DQ" if rule_type == "data_quality" else "BR"
         rule_id = f"{prefix}-{str(uuid.uuid4())[:4].upper()}"
 
         new_rule = {
             "id":         rule_id,
-            "name":       context.get(
-                "rule_name",
-                f"Rule: {request.query[:60]}"
-            ),
+            "name":       context.get("rule_name", f"Rule: {request.query[:60]}"),
             "type":       rule_type,
-            "dimension":  context.get("dimension",
-                                       "completeness"),
+            "dimension":  context.get("dimension", "completeness"),
             "asset":      context.get(
                 "asset",
-                request.data_products[0]
-                if request.data_products else "unknown"
+                request.data_products[0] if request.data_products else "unknown"
             ),
-            "expression": context.get("expression",
-                                       "user_defined"),
+            "expression": context.get("expression", "user_defined"),
             "threshold":  context.get("threshold"),
             "severity":   context.get("severity", "Medium"),
             "enabled":    True,
-            "owner":      context.get("owner",
-                                       "Data Governance"),
+            "owner":      context.get("owner", "Data Governance"),
             "created":    datetime.utcnow().date().isoformat(),
         }
 
         RULE_REGISTRY[rule_id] = new_rule
-        self.logger.info(
-            f"Rule created: {rule_id} ({new_rule['name']})"
-        )
+        self.logger.info(f"Rule created: {rule_id} ({new_rule['name']})")
 
         return AgentResult(
-            agent_name = self.name,
-            success    = True,
-            summary    = (
-                f"✅ Rule **{rule_id}** created: "
-                f"_{new_rule['name']}_\n"
-                f"  Type: {rule_type} | "
-                f"Severity: {new_rule['severity']} | "
-                f"Asset: {new_rule['asset']}"
+            agent_name=self.name,
+            success=True,
+            summary=(
+                f"✅ Rule **{rule_id}** created: _{new_rule['name']}_\n"
+                f"  Type: {rule_type} | Severity: {new_rule['severity']} "
+                f"| Asset: {new_rule['asset']}"
             ),
-            data       = new_rule,
-            sources    = ["Rule Registry"],
-            confidence = 1.0,
-            metadata   = {
-                "rule_id":   rule_id,
-                "rule_type": rule_type,
-            },
+            data=new_rule,
+            sources=["Rule Registry"],
+            confidence=1.0,
+            metadata={"rule_id": rule_id, "rule_type": rule_type},
         )
 
-    def _list_rules(self,
-                    request: AgentRequest) -> AgentResult:
+    def _list_rules(self, request: AgentRequest) -> AgentResult:
         products = request.data_products or []
-        rules    = list(RULE_REGISTRY.values())
-
+        rules = list(RULE_REGISTRY.values())
         if products:
-            rules = [
-                r for r in rules
-                if any(p in r.get("asset", "")
-                       for p in products)
-            ]
+            rules = [r for r in rules
+                     if any(p in r.get("asset", "") for p in products)]
 
-        dq_rules = [r for r in rules
-                    if r["type"] == "data_quality"]
-        br_rules = [r for r in rules
-                    if r["type"] == "business_rule"]
+        dq_rules = [r for r in rules if r["type"] == "data_quality"]
+        br_rules = [r for r in rules if r["type"] == "business_rule"]
 
         parts = [f"📋 **Rule Registry** ({len(rules)} total)"]
         if dq_rules:
-            parts.append(
-                f"\n**Data Quality Rules ({len(dq_rules)}):**"
-            )
+            parts.append(f"\n**Data Quality Rules ({len(dq_rules)}):**")
             for r in dq_rules:
                 enabled = "✅" if r.get("enabled") else "⏸️"
                 parts.append(
-                    f"  {enabled} **{r['id']}** "
-                    f"[{r.get('dimension','—')}] "
+                    f"  {enabled} **{r['id']}** [{r.get('dimension', '—')}] "
                     f"{r['name']} → {r['asset']}"
                 )
-
         if br_rules:
-            parts.append(
-                f"\n**Business Rules ({len(br_rules)}):**"
-            )
+            parts.append(f"\n**Business Rules ({len(br_rules)}):**")
             for r in br_rules:
                 enabled = "✅" if r.get("enabled") else "⏸️"
-                thresh  = r.get("threshold", "N/A")
+                thresh = r.get("threshold", "N/A")
                 parts.append(
-                    f"  {enabled} **{r['id']}** "
-                    f"{r['name']} "
+                    f"  {enabled} **{r['id']}** {r['name']} "
                     f"(threshold: {thresh})"
                 )
-
         if not rules:
             parts.append("No rules found for this scope.")
 
         return AgentResult(
-            agent_name = self.name,
-            success    = True,
-            summary    = "\n".join(parts),
-            data       = rules,
-            sources    = ["Rule Registry"],
-            confidence = 1.0,
-            metadata   = {"total_rules": len(rules)},
+            agent_name=self.name,
+            success=True,
+            summary="\n".join(parts),
+            data=rules,
+            sources=["Rule Registry"],
+            confidence=1.0,
+            metadata={"total_rules": len(rules)},
         )
 
-    def _evaluate_rules(self,
-                        request: AgentRequest) -> AgentResult:
+    def _evaluate_rules(self, request: AgentRequest) -> AgentResult:
+        """
+        Evaluate rules by executing their SQL expressions against Databricks.
+        Falls back to a pass/skip result with a clear message when the
+        Databricks connector is not configured.
+        """
         products = request.data_products or []
-        rules    = list(RULE_REGISTRY.values())
+        rules = list(RULE_REGISTRY.values())
         if products:
-            rules = [
-                r for r in rules
-                if any(p in r.get("asset", "")
-                       for p in products)
-            ]
+            rules = [r for r in rules
+                     if any(p in r.get("asset", "") for p in products)]
 
         results = []
+        connector = self._get_databricks_connector()
+
         for rule in rules:
-            # Mock: 70% pass rate
-            # Production: execute SQL against Databricks
-            passed = random.random() > 0.3
+            if connector:
+                passed, message = self._run_expression(rule, connector)
+            else:
+                passed = None
+                message = "⚠️ Databricks not configured — cannot evaluate"
+
             results.append({
                 "rule_id":   rule["id"],
                 "rule_name": rule["name"],
                 "type":      rule["type"],
                 "passed":    passed,
                 "severity":  rule["severity"],
-                "message":   "✅ Passed" if passed
-                             else "❌ Failed",
+                "message":   message,
             })
 
-        failed = [r for r in results if not r["passed"]]
-        lines  = [
-            f"📋 **Rule Evaluation** ({len(rules)} rules)"
-        ]
+        evaluated = [r for r in results if r["passed"] is not None]
+        failed = [r for r in evaluated if not r["passed"]]
+
+        lines = [f"📋 **Rule Evaluation** ({len(rules)} rules)"]
         for r in results:
-            icon = "✅" if r["passed"] else "❌"
-            lines.append(
-                f"  {icon} **{r['rule_id']}**: {r['rule_name']}"
-            )
-        if failed:
-            lines.append(
-                f"\n⚠️ **{len(failed)} rule(s) failed** "
-                f"— review required."
-            )
-        else:
+            if r["passed"] is None:
+                icon = "⚠️"
+            elif r["passed"]:
+                icon = "✅"
+            else:
+                icon = "❌"
+            lines.append(f"  {icon} **{r['rule_id']}**: {r['rule_name']} — {r['message']}")
+
+        if not connector:
+            lines.append("\n⚠️ Set DATABRICKS_* env vars to enable live rule evaluation.")
+        elif failed:
+            lines.append(f"\n⚠️ **{len(failed)} rule(s) failed** — review required.")
+        elif evaluated:
             lines.append("\n✅ All rules passed.")
 
         return AgentResult(
-            agent_name = self.name,
-            success    = True,
-            summary    = "\n".join(lines),
-            data       = results,
-            sources    = ["Rule Registry"],
-            confidence = 0.85,
-            metadata   = {
-                "passed": len(results) - len(failed),
+            agent_name=self.name,
+            success=True,
+            summary="\n".join(lines),
+            data=results,
+            sources=["Rule Registry"],
+            confidence=0.95 if connector else 0.0,
+            metadata={
+                "passed": len([r for r in evaluated if r["passed"]]),
                 "failed": len(failed),
+                "skipped": len(results) - len(evaluated),
             },
         )
+
+    def _get_databricks_connector(self):
+        """Return a DatabricksConnector if credentials are present, else None."""
+        if not self.config:
+            return None
+        db = self.config.databricks
+        if not (db.host and db.token and db.http_path):
+            return None
+        try:
+            from agents.information_agent import DatabricksConnector
+            return DatabricksConnector(db)
+        except Exception:
+            return None
+
+    def _run_expression(self, rule: Dict, connector) -> tuple:
+        """Execute a rule expression as SQL and return (passed, message)."""
+        expression = rule.get("expression", "")
+        asset = rule.get("asset", "")
+        try:
+            sql = f"SELECT CASE WHEN ({expression}) THEN 1 ELSE 0 END AS result FROM {asset} LIMIT 1"
+            rows = connector.query(sql)
+            passed = bool(rows and rows[0].get("result") == 1)
+            return passed, "✅ Passed" if passed else "❌ Failed"
+        except Exception as exc:
+            self.logger.warning("Rule eval failed for %s: %s", rule["id"], exc)
+            return False, f"❌ Error: {exc}"

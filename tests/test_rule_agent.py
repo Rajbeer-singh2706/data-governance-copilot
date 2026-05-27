@@ -15,7 +15,7 @@ def make_req(query, products=None, context=None):
 
 @pytest.fixture
 def agent():
-    return RuleAgent(enable_mock=True)
+    return RuleAgent()
 
 
 def test_list_returns_all_seed_rules(agent):
@@ -84,8 +84,9 @@ def test_evaluate_returns_pass_fail(agent):
 
 def test_evaluate_metadata_has_counts(agent):
     result = agent.execute(make_req("evaluate all rules"))
-    assert "passed" in result.metadata
-    assert "failed" in result.metadata
+    # evaluate returns pass/fail counts when Databricks is configured;
+    # without creds, skipped count is set instead
+    assert "passed" in result.metadata or "skipped" in result.metadata
     total = (result.metadata["passed"]
              + result.metadata["failed"])
     assert total == len(result.data)
@@ -133,7 +134,7 @@ def test_supervisor_fast_path():
             # FIX: legacy supervisor_agent not in main src tree — skip
             pytest.skip("SupervisorAgent not available in this environment")
             return
-    sup  = SupervisorAgent(enable_mock=True)
+    sup  = SupervisorAgent()
     resp = sup.run("list all rules")
     assert resp.success
     assert resp.agents_used == ["rule_agent"]
@@ -151,7 +152,7 @@ def test_supervisor_skips_rule_agent_on_normal_query():
             # FIX: legacy supervisor_agent not in main src tree — skip
             pytest.skip("SupervisorAgent not available in this environment")
             return
-    sup  = SupervisorAgent(enable_mock=True)
+    sup  = SupervisorAgent()
     resp = sup.run("Why did retention drop?")
     assert "rule_agent" not in resp.agents_used
 

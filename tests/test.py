@@ -1,50 +1,41 @@
+"""
+tests/test.py — Quick smoke-test / diagnostic script.
+Run directly: python tests/test.py
+(Not part of the pytest suite — no pytest imports.)
+"""
 import os
 from dotenv import load_dotenv
 
-# load our .env file 
 load_dotenv()
 
-## read a value from it 
-mock_mode = os.getenv("ENABLE_MOCK", "not found")
-log_level = os.getenv("LOG_LEVEL" , "not found")
-
-print(f"ENABLE_MOCK = {mock_mode}")
-print(f"LOG_LEVEL = {log_level}")
-print("Setup is working correctly!")
-
-
-## python test.py
-
-# test_settings.py  (in root folder — delete after)
+print("=== Environment ===")
+print(f"ENVIRONMENT = {os.getenv('ENVIRONMENT', 'not set')}")
+print(f"LOG_LEVEL   = {os.getenv('LOG_LEVEL', 'not set')}")
+print(f"LLM_PROVIDER= {os.getenv('LLM_PROVIDER', 'not set')}")
 
 from config.settings import config, DATA_PRODUCTS
 
-# ── Test 1: basic values ─────────────────────────────────
-print("=== AppConfig ===")
-print(f"enable_mock : {config.enable_mock}")   # should be True
-print(f"log_level   : {config.log_level}")     # should be INFO
-print(f"debug       : {config.debug}")         # should be False
-print(f"max_retries : {config.max_retries}")   # should be 3
+print("\n=== AppConfig ===")
+print(f"environment : {config.environment}")
+print(f"log_level   : {config.log_level}")
+print(f"debug       : {config.debug}")
 
-# ── Test 2: nested configs work ──────────────────────────
-print("\n=== LLMConfig (nested) ===")
-print(f"provider    : {config.llm.provider}")  # should be openai
-print(f"model       : {config.llm.model}")     # should be gpt-4o
-print(f"temperature : {config.llm.temperature}") # should be 0.1
+print("\n=== LLMConfig ===")
+print(f"provider    : {config.llm.provider}")
+print(f"model       : {config.llm.model}")
+print(f"temperature : {config.llm.temperature}")
 
-# ── Test 3: Databricks config nested ────────────────────
-print("\n=== DatabricksConfig (nested) ===")
-print(f"catalog : {config.databricks.catalog}") # should be main
-print(f"schema  : {config.databricks.schema}")  # should be analytics
+print("\n=== DatabricksConfig ===")
+print(f"host        : {config.databricks.host or '(not set)'}")
+print(f"catalog     : {config.databricks.catalog}")
+print(f"schema      : {config.databricks.schema}")
 
-# ── Test 4: DATA_PRODUCTS dict ───────────────────────────
 print("\n=== DATA_PRODUCTS ===")
 for name, info in DATA_PRODUCTS.items():
     print(f"  {name} → owner: {info['owner']}, table: {info['table']}")
 
-# ── Test 5: singleton check ──────────────────────────────
 print("\n=== Singleton test ===")
 from config.settings import config as config2
-print(f"Same object? {config is config2}")     # should be True
+print(f"Same object? {config is config2}")
 
-print("\n✅ All tests passed!")
+print("\n✅ Smoke test passed!")

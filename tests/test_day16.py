@@ -1,7 +1,6 @@
 # tests/test_day16.py
 import os, sys, pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-os.environ.setdefault("ENABLE_MOCK", "true")
 os.environ.setdefault("OPENAI_API_KEY", "")
 
 
@@ -107,7 +106,7 @@ class TestAgentsStatus:
         assert client.get("/agents/status").status_code == 200
     def test_required_fields(self, client):
         r = client.get("/agents/status").json()
-        for f in ["status","version","environment","mock_mode",
+        for f in ["status","version","environment",
                   "redis_ok","agents","daily_tokens","timestamp"]:
             assert f in r
     def test_five_agents(self, client):

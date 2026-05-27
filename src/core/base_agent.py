@@ -61,11 +61,12 @@ class BaseAgent(ABC):
     description: str = "Base agent"
     capabilities: List[str] = []
 
-    def __init__(self, config=None, enable_mock: bool = True):
-        self.config      = config
-        self.enable_mock = enable_mock
-        self.logger = setup_logger(f"agent.{self.name}")  # named logger
-        self._healthy    = True
+    def __init__(self, config=None, enable_mock: bool = False):
+        # enable_mock is kept for signature compatibility but is no longer used.
+        # All agents connect to real services; use env vars to configure credentials.
+        self.config   = config
+        self.logger   = setup_logger(f"agent.{self.name}")
+        self._healthy = True
 
     def execute(self, request: AgentRequest) -> AgentResult:
         """Public entry point — NEVER overridden by subclasses."""
@@ -109,6 +110,5 @@ class BaseAgent(ABC):
         return {
             "agent":        self.name,
             "healthy":      self._healthy,
-            "mock_mode":    self.enable_mock,
             "capabilities": self.capabilities,
         }
