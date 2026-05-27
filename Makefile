@@ -1,4 +1,4 @@
-.PHONY: help start stop logs clean setup addtoml app_logs redis_logs
+.PHONY: help start stop logs clean setup addtoml app_logs redis_logs api_logs
 # Default target
 help: ## Show this help message
 	@echo "Available commands:"
@@ -30,3 +30,6 @@ app_logs:
 
 redis_logs:
 	docker compose logs -f redis
+
+api_logs:
+	docker compose logs -f api

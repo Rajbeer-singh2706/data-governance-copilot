@@ -568,3 +568,22 @@
 {"timestamp": "2026-05-27T10:46:11.332618", "level": "INFO", "logger": "copilot.cache", "message": "Cache SET  [information_agent] ttl=1800s", "module": "cache", "function": "sync_wrapper", "line": 188}
 {"timestamp": "2026-05-27T10:46:11.335968", "level": "INFO", "logger": "agent.knowledge_agent", "message": "[f820ec1e] knowledge_agent done in 3.51ms", "module": "base_agent", "function": "execute", "line": 83}
 {"timestamp": "2026-05-27T10:46:11.337810", "level": "INFO", "logger": "copilot.cache", "message": "Cache SET  [knowledge_agent] ttl=7200s", "module": "cache", "function": "sync_wrapper", "line": 188}
+{"timestamp": "2026-05-27T12:10:39.240409", "level": "INFO", "logger": "copilot.cache", "message": "Redis connected: redis://redis:6379/0", "module": "cache", "function": "get_client", "line": 59}
+{"timestamp": "2026-05-27T12:11:13.151364", "level": "INFO", "logger": "copilot.cache", "message": "Cache MISS [metadata_agent] \u2014 calling agent", "module": "cache", "function": "sync_wrapper", "line": 185}
+{"timestamp": "2026-05-27T12:11:13.153226", "level": "INFO", "logger": "copilot.cache", "message": "Cache MISS [knowledge_agent] \u2014 calling agent", "module": "cache", "function": "sync_wrapper", "line": 185}
+{"timestamp": "2026-05-27T12:11:13.154203", "level": "INFO", "logger": "copilot.cache", "message": "Redis connected: redis://redis:6379/0", "module": "cache", "function": "get_client", "line": 59}
+{"timestamp": "2026-05-27T12:11:13.154657", "level": "INFO", "logger": "agent.knowledge_agent", "message": "[3f1accbb] knowledge_agent received: 'why did retention drop last month?'", "module": "base_agent", "function": "execute", "line": 74}
+{"timestamp": "2026-05-27T12:11:13.157726", "level": "INFO", "logger": "copilot.cache", "message": "Cache SET  [metadata_agent] ttl=3600s", "module": "cache", "function": "sync_wrapper", "line": 188}
+{"timestamp": "2026-05-27T12:11:13.165364", "level": "INFO", "logger": "copilot.cache", "message": "Cache MISS [information_agent] \u2014 calling agent", "module": "cache", "function": "sync_wrapper", "line": 185}
+{"timestamp": "2026-05-27T12:11:13.174757", "level": "INFO", "logger": "agent.knowledge_agent", "message": "[3f1accbb] knowledge_agent done in 19.83ms", "module": "base_agent", "function": "execute", "line": 83}
+{"timestamp": "2026-05-27T12:11:13.175277", "level": "INFO", "logger": "copilot.cache", "message": "Cache SET  [information_agent] ttl=1800s", "module": "cache", "function": "sync_wrapper", "line": 188}
+{"timestamp": "2026-05-27T12:11:13.179009", "level": "INFO", "logger": "copilot.cache", "message": "Cache SET  [knowledge_agent] ttl=7200s", "module": "cache", "function": "sync_wrapper", "line": 188}
+{"timestamp": "2026-05-27T12:12:17.051162", "level": "INFO", "logger": "copilot.cache", "message": "Cache HIT  [information_agent]", "module": "cache", "function": "sync_wrapper", "line": 183}
+{"timestamp": "2026-05-27T12:12:17.061589", "level": "INFO", "logger": "copilot.cache", "message": "Cache HIT  [knowledge_agent]", "module": "cache", "function": "sync_wrapper", "line": 183}
+{"timestamp": "2026-05-27T12:12:17.064435", "level": "INFO", "logger": "copilot.cache", "message": "Cache HIT  [metadata_agent]", "module": "cache", "function": "sync_wrapper", "line": 183}
+{"timestamp": "2026-05-27T12:12:44.269970", "level": "INFO", "logger": "copilot.cache", "message": "Cache HIT  [information_agent]", "module": "cache", "function": "sync_wrapper", "line": 183}
+{"timestamp": "2026-05-27T12:12:44.278833", "level": "INFO", "logger": "copilot.cache", "message": "Cache HIT  [metadata_agent]", "module": "cache", "function": "sync_wrapper", "line": 183}
+{"timestamp": "2026-05-27T12:12:44.285297", "level": "INFO", "logger": "copilot.cache", "message": "Cache HIT  [knowledge_agent]", "module": "cache", "function": "sync_wrapper", "line": 183}
+{"timestamp": "2026-05-27T12:13:19.947666", "level": "INFO", "logger": "copilot.cache", "message": "Cache HIT  [information_agent]", "module": "cache", "function": "sync_wrapper", "line": 183}
+{"timestamp": "2026-05-27T12:13:19.950184", "level": "INFO", "logger": "copilot.cache", "message": "Cache HIT  [knowledge_agent]", "module": "cache", "function": "sync_wrapper", "line": 183}
+{"timestamp": "2026-05-27T12:13:19.955278", "level": "INFO", "logger": "copilot.cache", "message": "Cache HIT  [metadata_agent]", "module": "cache", "function": "sync_wrapper", "line": 183}
