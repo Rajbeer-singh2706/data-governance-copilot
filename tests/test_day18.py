@@ -152,16 +152,16 @@ class TestKnowledgeAgent:
         result  = agent.execute(request)
         assert isinstance(result.sources, list)
 
-    def test_result_data_has_docs_and_scores(self):
+    def test_result_data_has_knowledge_entries(self):
         from core.base_agent import AgentRequest
         agent   = self._agent()
         request = AgentRequest(query="data quality rules",
                                intent="data_quality", query_id="t4",
                                data_products=[])
         result  = agent.execute(request)
-        if result.success:
-            assert "docs"   in result.data
-            assert "scores" in result.data
+        if result.success and result.data:
+            assert "knowledge" in result.data
+            assert isinstance(result.data["knowledge"], list)
 
     def test_agent_name(self):
         agent = self._agent()

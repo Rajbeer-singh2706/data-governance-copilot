@@ -63,8 +63,7 @@ class TeamsActivity(BaseModel):
     channelData:  Optional[TeamsChannelData] = None
     membersAdded: Optional[List[TeamsUser]]  = None   # conversationUpdate
 
-    class Config:
-        populate_by_name = True   # allow both "from" and "from_"
+    model_config = {"populate_by_name": True}  # allow both "from" and "from_"
 
 
 # ── Adaptive Card building blocks ──────────────────────────────────────────
@@ -89,8 +88,7 @@ class AdaptiveCard(BaseModel):
     body:     List[Dict] = []
     actions:  List[Dict] = []
 
-    class Config:
-        populate_by_name = True
+    model_config = {"populate_by_name": True}
 
 
 # ── Outgoing to Teams ──────────────────────────────────────────────────────

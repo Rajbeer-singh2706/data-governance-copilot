@@ -244,10 +244,18 @@ def auto_ticket_node(state: AgentState) -> dict:
         }
 
     created = []
+    capacity = _agents["capacity"]
+    if not hasattr(capacity, "create_ticket_from_anomaly"):
+        return {
+            "auto_tickets": [],
+            "pending_action": {
+                "action":  "create_jira_tickets",
+                "error":   "CapacityAgent not configured — set JIRA_* env vars.",
+                "anomalies": critical,
+            },
+        }
     for anomaly in critical:
-        result = _agents["capacity"].create_ticket_from_anomaly(
-            anomaly, products[0]
-        )
+        result = capacity.create_ticket_from_anomaly(anomaly, products[0])
         if result.success:
             created.append(result.data.get("ticket_id", "?"))
 

@@ -147,8 +147,8 @@ def cached_node(prefix: str, ttl: int = 3600):
             # ── async node ────────────────────────────────────────────
             @wraps(func)
             async def async_wrapper(state: dict, *args, **kwargs):
-                from config.settings import AppConfig
-                client = get_client(AppConfig().redis)
+                from config.settings import config as _cfg
+                client = get_client(_cfg.redis)
                 key    = make_key(
                     prefix,
                     query         = state.get("query", ""),
@@ -170,8 +170,8 @@ def cached_node(prefix: str, ttl: int = 3600):
             # ── sync node (current default) ───────────────────────────
             @wraps(func)
             def sync_wrapper(state: dict, *args, **kwargs):
-                from config.settings import AppConfig
-                client = get_client(AppConfig().redis)
+                from config.settings import config as _cfg
+                client = get_client(_cfg.redis)
                 key    = make_key(
                     prefix,
                     query         = state.get("query", ""),

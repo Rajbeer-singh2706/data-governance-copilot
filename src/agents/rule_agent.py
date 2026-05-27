@@ -8,7 +8,7 @@ Rule evaluation executes expressions against Databricks via the
 InformationAgent's connector when available.
 """
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from core.base_agent import BaseAgent, AgentRequest, AgentResult
@@ -138,7 +138,7 @@ class RuleAgent(BaseAgent):
             "severity":   context.get("severity", "Medium"),
             "enabled":    True,
             "owner":      context.get("owner", "Data Governance"),
-            "created":    datetime.utcnow().date().isoformat(),
+            "created":    datetime.now(timezone.utc).date().isoformat(),
         }
 
         RULE_REGISTRY[rule_id] = new_rule

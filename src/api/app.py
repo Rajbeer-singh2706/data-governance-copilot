@@ -6,7 +6,7 @@ FastAPI REST server with rate limiting and SSE streaming.
 from __future__ import annotations
 import asyncio, json, os, sys, uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException, Request
@@ -67,7 +67,7 @@ async def _run_graph(body: QueryRequest) -> dict:
     if body.data_products:
         state["data_products"] = body.data_products
     cfg    = {"configurable": {"thread_id": thread_id}}
-    loop   = asyncio.get_event_loop()
+    loop   = asyncio.get_running_loop()
     result = await loop.run_in_executor(_executor,
                                         lambda: copilot_graph.invoke(state, config=cfg))
     result["_thread_id"] = thread_id
@@ -75,7 +75,7 @@ async def _run_graph(body: QueryRequest) -> dict:
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()+"Z"}
+    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
 @app.post("/query", response_model=QueryResponse)
@@ -155,7 +155,7 @@ async def agents_status(request: Request):
     return {"status":"ok","version":"1.0.0","environment":config.environment,
             "redis_ok":redis_ok,
             "agents":agents,"daily_tokens":get_daily_usage(redis),
-            "timestamp":datetime.utcnow().isoformat()+"Z"}
+            "timestamp":datetime.now(timezone.utc).isoformat()}
 
 
 # Add these two lines to src/api/app.py after the app = FastAPI(...) setup:

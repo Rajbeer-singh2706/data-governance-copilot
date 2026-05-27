@@ -15,6 +15,7 @@ a PostgreSQL connection or OpenAI embeddings key.
 from typing import Any, Dict, List, Optional
 
 from core.base_agent import BaseAgent, AgentRequest, AgentResult
+from core.vector_store import get_vector_store, similarity_search
 from config.settings import AppConfig
 
 
@@ -46,7 +47,6 @@ class KnowledgeAgent(BaseAgent):
                 "KnowledgeAgent requires a valid AppConfig with "
                 "vector_db settings (POSTGRES_* and OPENAI_API_KEY)."
             )
-        from core.vector_store import get_vector_store
         self._store = get_vector_store(config.vector_db)
 
     def _detect_topics(self, query: str) -> List[str]:
@@ -72,8 +72,6 @@ class KnowledgeAgent(BaseAgent):
         return "\n".join(parts)
 
     def _execute(self, request: AgentRequest) -> AgentResult:
-        from core.vector_store import similarity_search
-
         results = similarity_search(self._store, request.query, k=5)
         relevant = [(doc, score) for doc, score in results if score >= 0.70]
 

@@ -9,6 +9,7 @@ import os
 from typing import Any, Dict, List, Optional
 
 from core.base_agent import BaseAgent, AgentRequest, AgentResult
+from core.mcp_client import get_mcp_tools
 
 
 class JiraClient:
@@ -95,7 +96,6 @@ class CapacityAgent(BaseAgent):
     def __init__(self, config=None, **kwargs):
         kwargs.pop("enable_mock", None)
         super().__init__(config, enable_mock=False)
-        from core.mcp_client import get_mcp_tools
         self._mcp_tools = get_mcp_tools("jira")
         if not self._mcp_tools:
             self._client = JiraClient()

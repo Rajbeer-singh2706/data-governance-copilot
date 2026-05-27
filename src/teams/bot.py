@@ -90,7 +90,7 @@ async def _run_graph(query: str, thread_id: str,
     )
     state["approved"] = approved
 
-    loop   = asyncio.get_event_loop()
+    loop   = asyncio.get_running_loop()
     result = await loop.run_in_executor(
         _executor,
         lambda: copilot_graph.invoke(
@@ -243,6 +243,6 @@ async def teams_health():
     return {
         "status":    "ok",
         "bot":       "Data Governance Copilot",
-        "mock_mode": config.enable_mock,
+        "mock_mode": os.getenv("ENABLE_MOCK", "true").lower() == "true",
         "hmac_enabled": bool(_APP_SECRET),
     }

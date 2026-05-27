@@ -6,7 +6,8 @@ class TestSettings:
     def test_redis_config_defaults(self):
         from config.settings import RedisConfig
         cfg = RedisConfig()
-        assert cfg.host == "redis"
+        # Default is "localhost" for local dev; docker-compose overrides via REDIS_HOST=redis
+        assert cfg.host == os.getenv("REDIS_HOST", "localhost")
         assert cfg.port == 6379
         assert cfg.db   == 0
 

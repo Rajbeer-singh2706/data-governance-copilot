@@ -9,6 +9,7 @@ import os
 from typing import Any, Dict, List, Optional
 
 from core.base_agent import BaseAgent, AgentRequest, AgentResult
+from core.mcp_client import get_mcp_tools
 
 
 class CollibraClient:
@@ -91,7 +92,6 @@ class MetadataAgent(BaseAgent):
         kwargs.pop("enable_mock", None)
         super().__init__(config, enable_mock=False)
         # Try MCP first; fall back to REST client
-        from core.mcp_client import get_mcp_tools
         self._mcp_tools = get_mcp_tools("collibra")
         if not self._mcp_tools:
             self._client = CollibraClient()

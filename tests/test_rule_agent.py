@@ -84,12 +84,13 @@ def test_evaluate_returns_pass_fail(agent):
 
 def test_evaluate_metadata_has_counts(agent):
     result = agent.execute(make_req("evaluate all rules"))
-    # evaluate returns pass/fail counts when Databricks is configured;
-    # without creds, skipped count is set instead
+    # evaluate returns pass/fail/skipped counts in metadata
     assert "passed" in result.metadata or "skipped" in result.metadata
-    total = (result.metadata["passed"]
-             + result.metadata["failed"])
-    assert total == len(result.data)
+    passed  = result.metadata.get("passed", 0)
+    failed  = result.metadata.get("failed", 0)
+    skipped = result.metadata.get("skipped", 0)
+    # Total across all three categories must equal number of rule records returned
+    assert passed + failed + skipped == len(result.data)
 
 
 def test_summary_contains_emoji(agent):
