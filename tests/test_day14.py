@@ -3,11 +3,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 
 class TestSettings:
-
     def test_redis_config_defaults(self):
         from config.settings import RedisConfig
         cfg = RedisConfig()
-        assert cfg.host == "localhost"
+        assert cfg.host == "redis"
         assert cfg.port == 6379
         assert cfg.db   == 0
 
