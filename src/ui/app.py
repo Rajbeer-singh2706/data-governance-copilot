@@ -257,8 +257,6 @@ def _render_hitl_panel():
 with st.sidebar:
     st.markdown("## ⚙️ Settings")
 
-    mock_mode  = st.toggle("Mock Mode", value=config.enable_mock,
-                            help="No real API keys needed")
     time_range = st.selectbox("Time Range",
                                ["last_month","last_quarter","last_week","YTD"])
 

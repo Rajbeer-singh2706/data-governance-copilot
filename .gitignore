@@ -21,3 +21,6 @@ env/
 
 # Package build metadata
 *.egg-info/
+
+## data folder 
+data/*
