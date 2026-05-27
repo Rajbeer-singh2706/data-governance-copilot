@@ -1,8 +1,5 @@
 """
 src/ui/app.py
-Day 18: Polished Streamlit UI.
-
-New vs Day 15:
   • Confidence progress bar (colour-coded green/amber/red)
   • Source pills displayed as styled chips
   • Anomaly badges with ⚠️ colour coding
