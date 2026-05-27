@@ -88,20 +88,24 @@ class RuleAgent(BaseAgent):
         if any(kw in q for kw in [
             "create rule", "add rule", "define rule",
             "new rule", "create dq", "create a rule",
+            "create a business", "create a dq",
         ]):
             return self._create_rule(request)
+
+        elif any(kw in q for kw in [
+            "evaluate", "check rules", "run rules",
+            "validate rules",
+        ]):
+            # FIX: evaluate must be checked BEFORE list because
+            # "evaluate all rules" contains "all rules" which
+            # previously matched the list branch first.
+            return self._evaluate_rules(request)
 
         elif any(kw in q for kw in [
             "list rules", "show rules", "what rules",
             "all rules", "existing rules",
         ]):
             return self._list_rules(request)
-
-        elif any(kw in q for kw in [
-            "evaluate", "check rules", "run rules",
-            "validate rules",
-        ]):
-            return self._evaluate_rules(request)
 
         else:
             return self._list_rules(request)
