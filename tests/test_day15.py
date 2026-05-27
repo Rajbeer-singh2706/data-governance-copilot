@@ -81,6 +81,7 @@ class TestRetryAgentCall:
     def test_returns_degraded_on_final_failure(self):
         import core.retry as r
         r.time.sleep = lambda _: None
+        from core.retry import retry_agent_call  # FIX: import after monkeypatching time.sleep
         calls = {"n": 0}
         def always_fail(req):
             calls["n"] += 1
@@ -93,6 +94,7 @@ class TestRetryAgentCall:
     def test_does_not_raise(self):
         import core.retry as r
         r.time.sleep = lambda _: None
+        from core.retry import retry_agent_call  # FIX: must import in scope
         def boom(req): raise RuntimeError("boom")
         result = retry_agent_call(boom, object(), max_retries=3)
         assert result.success == False

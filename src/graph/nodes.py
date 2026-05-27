@@ -54,7 +54,6 @@ def _build_request(state: AgentState) -> AgentRequest:
 # ══════════════════════════════════════════════════════════════════════════
 # DAY 13 — pre_hook_node (unchanged)
 # ══════════════════════════════════════════════════════════════════════════
-
 def pre_hook_node(state: AgentState) -> dict:
     """Guardrails + PII redaction + start_time recording."""
     from core.guardrails import run_guardrails
@@ -118,51 +117,58 @@ def supervisor_node(state: AgentState) -> dict:
 
 @cached_node("information_agent", ttl=1800)     # 30 min — SQL results
 def information_node(state: AgentState) -> dict:
-    result = retry_agent_call(                   # ← was: _agents["information"].execute(...)
+    result = retry_agent_call(
         _agents["information"].execute,
         _build_request(state),
         max_retries=3,
     )
+    # FIX: result.data may be None — guard with `or {}`
+    data = (result.data or {}) if result.success else {}
     return {
         "agent_results": [result.to_dict()],
-        "sources":        result.sources if result.success else [],
-         "anomalies":     result.data.get("anomalies",[]) if result.success else [],
-         "errors":        [] if result.success else [
+        "sources":       result.sources if result.success else [],
+        "anomalies":     data.get("anomalies", []),
+        "errors":        [] if result.success else [
             {"node": "information_node", "error": result.error}
-         ]  
+        ],
     }
 
 
 @cached_node("knowledge_agent", ttl=7200)       # 2 hrs — docs change slowly
 def knowledge_node(state: AgentState) -> dict:
-    result = retry_agent_call(                   # ← was: _agents["knowledge"].execute(...)
+    result = retry_agent_call(
         _agents["knowledge"].execute,
         _build_request(state),
         max_retries=3,
     )
+    # FIX: result.data may be None — guard with `or {}`
+    data = (result.data or {}) if result.success else {}
     return {
         "agent_results": [result.to_dict()],
-        "sources":        result.sources if result.success else [],
-         "anomalies":     result.data.get("anomalies",[]) if result.success else [],
-         "errors":        [] if result.success else [
+        "sources":       result.sources if result.success else [],
+        "anomalies":     data.get("anomalies", []),
+        "errors":        [] if result.success else [
             {"node": "knowledge_node", "error": result.error}
-         ]  
+        ],
     }
+
 
 @cached_node("metadata_agent", ttl=3600)        # 1 hr — Collibra metadata
 def metadata_node(state: AgentState) -> dict:
-    result = retry_agent_call(                   # ← was: _agents["metadata"].execute(...)
+    result = retry_agent_call(
         _agents["metadata"].execute,
         _build_request(state),
         max_retries=3,
     )
+    # FIX: result.data may be None — guard with `or {}`
+    data = (result.data or {}) if result.success else {}
     return {
         "agent_results": [result.to_dict()],
-        "sources":        result.sources if result.success else [],
-         "anomalies":     result.data.get("anomalies",[]) if result.success else [],
-         "errors":        [] if result.success else [
+        "sources":       result.sources if result.success else [],
+        "anomalies":     data.get("anomalies", []),
+        "errors":        [] if result.success else [
             {"node": "metadata_node", "error": result.error}
-         ]  
+        ],
     }
 
 # ── Uncached agent nodes ───────────────────────────────────────────────────

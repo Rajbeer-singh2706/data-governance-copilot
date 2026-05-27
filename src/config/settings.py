@@ -94,6 +94,7 @@ class AppConfig:
     debug:       bool = field(default_factory=lambda: os.getenv("DEBUG", "false").lower() == "true")
     log_level:   str  = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
     enable_mock: bool = field(default_factory=lambda: os.getenv("ENABLE_MOCK", "true").lower() == "true")
+    environment: str  = field(default_factory=lambda: os.getenv("ENVIRONMENT", "development"))  # FIX: was missing
 
     llm:         LLMConfig        = field(default_factory=LLMConfig)
     databricks:  DatabricksConfig = field(default_factory=DatabricksConfig)

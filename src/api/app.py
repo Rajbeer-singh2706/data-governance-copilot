@@ -110,7 +110,7 @@ async def query_stream(request: Request, body: QueryRequest):
 
     async def event_stream():
         qid = str(uuid.uuid4())[:8]
-        yield f"data: {json.dumps({'type':'start','query_id':qid})}"
+        yield f"data: {json.dumps({'type':'start','query_id':qid})}\n\n"
         try:
             result = await _run_graph(body)
             payload = {"type":"result",
@@ -120,10 +120,10 @@ async def query_stream(request: Request, body: QueryRequest):
                 "summary": result.get("final_summary",""),
                 "confidence": result.get("confidence",0.0),
                 "execution_ms": result.get("execution_ms",0.0)}
-            yield f"data: {json.dumps(payload)}"
-            yield f"data: {json.dumps({'type':'done','execution_ms':result.get('execution_ms',0)})}"
+            yield f"data: {json.dumps(payload)}\n\n"
+            yield f"data: {json.dumps({'type':'done','execution_ms':result.get('execution_ms',0)})}\n\n"
         except Exception as exc:
-            yield f"data: {json.dumps({'type':'error','message':str(exc)})}"
+            yield f"data: {json.dumps({'type':'error','message':str(exc)})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream",
         headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no","Connection":"keep-alive"})
@@ -162,5 +162,3 @@ async def agents_status(request: Request):
 
 from teams.bot import router as teams_router   # ← add this
 app.include_router(teams_router)               # ← add this
-
-# That's it — /teams/webhook and /teams/health are now live
