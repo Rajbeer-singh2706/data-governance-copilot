@@ -72,22 +72,24 @@ class RedisConfig:
 
 @dataclass
 class VectorDBConfig:
-    """pgvector connection for knowledge_agent RAG."""
+    """
+    Day 18: PostgreSQL + pgvector connection for knowledge_agent RAG.
+    Run scripts/init_pgvector.sql once before using.
+    """
     host:          str = os.getenv("POSTGRES_HOST",     "localhost")
     port:          int = int(os.getenv("POSTGRES_PORT", "5432"))
     database:      str = os.getenv("POSTGRES_DB",       "governance_db")
     user:          str = os.getenv("POSTGRES_USER",     "postgres")
     password:      str = os.getenv("POSTGRES_PASSWORD", "")
     table_name:    str = "document_embeddings"
-    embedding_dim: int = 1536   # text-embedding-3-small output dim
-
+    embedding_dim: int = 1536   # text-embedding-3-small output dimension
+ 
     @property
     def connection_string(self) -> str:
         return (
             f"postgresql+psycopg2://{self.user}:{self.password}"
             f"@{self.host}:{self.port}/{self.database}"
         )
-
 
 @dataclass
 class AppConfig:

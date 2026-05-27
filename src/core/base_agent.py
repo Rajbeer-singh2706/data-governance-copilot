@@ -7,7 +7,6 @@ import time
 
 from core.logging_utils import setup_logger
 
-
 @dataclass
 class AgentRequest:
     query: str                        # ← the raw NL question

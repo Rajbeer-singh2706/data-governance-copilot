@@ -1,9 +1,16 @@
 """
 src/agents/knowledge_agent.py
-
-Retrieves business context via pgvector similarity search.
-Requires POSTGRES_* env vars and OPENAI_API_KEY for embeddings.
-Falls back gracefully with a clear error when the store is unavailable.
+Day 18: Replace FAISS / ChromaDB mock with pgvector via vector_store.py.
+ 
+Retrieval logic:
+  1. get_vector_store(config.vector_db) → PGVector | NullVectorStore
+  2. similarity_search(store, query, k=5)
+  3. Filter: keep docs where score > 0.7 (relevance threshold)
+  4. Build summary from retrieved documents
+ 
+In ENABLE_MOCK=true mode, NullVectorStore returns pre-written governance
+documents with fixed high scores, so the agent works end-to-end without
+a PostgreSQL connection or OpenAI embeddings key.
 """
 from typing import Any, Dict, List, Optional
 

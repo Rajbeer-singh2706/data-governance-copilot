@@ -2,14 +2,12 @@
 src/api/middleware.py  — Day 16
 slowapi rate limiter setup for FastAPI.
 
-FIX (Day 15–18 bug): The limiter was unconditionally configured with a
-Redis storage_uri. When Redis is unavailable (e.g. in the test environment)
-slowapi raises a ConnectionRefusedError on the FIRST request, crashing every
-endpoint.
+The limiter was unconditionally configured with a Redis storage_uri. 
+When Redis is unavailable (e.g. in the test environment) slowapi raises a ConnectionRefusedError 
+on the FIRST request, crashing every endpoint.
 
-Solution: probe Redis at startup. If it's reachable, use Redis storage so
-rate-limit state is shared across ECS tasks. If not (dev/test/CI), fall back
-to in-memory storage which is always available.
+Solution: probe Redis at startup. If it's reachable, use Redis storage so rate-limit state is shared 
+across ECS tasks. If not (dev/test/CI), fall back to in-memory storage which is always available.
 """
 
 import logging
