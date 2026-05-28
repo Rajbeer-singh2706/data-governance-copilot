@@ -1,62 +1,20 @@
 """
 src/agents/metadata_agent.py
 
-Retrieves governance metadata from Collibra DGC REST API.
-When USE_MCP=true, uses MCP tools instead of direct REST.
-Requires COLLIBRA_BASE_URL + COLLIBRA_API_TOKEN env vars.
+Retrieves governance metadata via IMetadataService.
+All Collibra-specific REST / MCP logic lives in services/collibra/.
+This agent only owns:
+  - product alias resolution
+  - summary & DQ score formatting
 """
-import os
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from core.base_agent import BaseAgent, AgentRequest, AgentResult
 from core.mcp_client import get_mcp_tools
+from services.base import IMetadataService
+from services.factory import get_metadata_service
 
 
-class CollibraClient:
-    """Thin REST client for Collibra Data Governance Center."""
-
-    BASE_PATH = "/rest/2.0"
-
-    def __init__(self):
-        self.base_url = os.getenv("COLLIBRA_BASE_URL", "").rstrip("/")
-        self.token = os.getenv("COLLIBRA_API_TOKEN", "")
-        if not self.base_url or not self.token:
-            raise EnvironmentError(
-                "MetadataAgent requires COLLIBRA_BASE_URL and "
-                "COLLIBRA_API_TOKEN environment variables."
-            )
-
-    def _headers(self) -> Dict:
-        return {
-            "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json",
-        }
-
-    def search_assets(self, name: str) -> List[Dict]:
-        import requests
-        url = f"{self.base_url}{self.BASE_PATH}/assets"
-        params = {"name": name, "nameMatchMode": "ANYWHERE", "limit": 5}
-        resp = requests.get(url, headers=self._headers(), params=params, timeout=15)
-        resp.raise_for_status()
-        return resp.json().get("results", [])
-
-    def get_asset(self, asset_id: str) -> Dict:
-        import requests
-        url = f"{self.base_url}{self.BASE_PATH}/assets/{asset_id}"
-        resp = requests.get(url, headers=self._headers(), timeout=15)
-        resp.raise_for_status()
-        return resp.json()
-
-    def get_data_quality(self, asset_id: str) -> Dict:
-        import requests
-        url = f"{self.base_url}{self.BASE_PATH}/dataQuality/metrics"
-        params = {"assetId": asset_id}
-        resp = requests.get(url, headers=self._headers(), params=params, timeout=15)
-        resp.raise_for_status()
-        return resp.json()
-
-
-# Display names to search in Collibra
 _PRODUCT_SEARCH_NAMES = {
     "retention": "Gross Retention Rate",
     "bookings":  "Total Bookings",
@@ -76,8 +34,10 @@ _PRODUCT_ALIASES = {
 
 class MetadataAgent(BaseAgent):
     """
-    Retrieves governance metadata from Collibra DGC.
-    Uses MCP tools when USE_MCP=true, otherwise direct REST.
+    Retrieves governance metadata via IMetadataService.
+    In mock mode: MockCollibraService (no credentials needed).
+    In prod mode: CollibraService (requires COLLIBRA_* env vars).
+    MCP tools (USE_MCP=true) are layered on top when available.
     """
     name = "metadata_agent"
     description = "Retrieves governance metadata from Collibra"
@@ -88,32 +48,85 @@ class MetadataAgent(BaseAgent):
         "classification_retrieval",
     ]
 
-    def __init__(self, config=None, **kwargs):
+    def __init__(
+        self,
+        config=None,
+        metadata_service: Optional[IMetadataService] = None,
+        **kwargs,
+    ) -> None:
+        """
+        Args:
+            config:           AppConfig
+            metadata_service: Explicit IMetadataService injection (useful in tests)
+        """
         kwargs.pop("enable_mock", None)
         super().__init__(config, enable_mock=False)
-        # Try MCP first; fall back to REST client
+        self._svc: IMetadataService = metadata_service or get_metadata_service(config)
         self._mcp_tools = get_mcp_tools("collibra")
-        if not self._mcp_tools:
-            self._client = CollibraClient()
-        else:
-            self._client = None
+
+    # ── Helpers ───────────────────────────────────────────────────────────
 
     def _resolve_products(self, query: str) -> List[str]:
         q = query.lower()
-        return list({
-            v for k, v in _PRODUCT_ALIASES.items() if k in q
-        }) or ["retention"]
+        return list({v for k, v in _PRODUCT_ALIASES.items() if k in q}) or ["retention"]
+
+    def _fetch_asset(self, product: str) -> Optional[Dict]:
+        search_name = _PRODUCT_SEARCH_NAMES.get(product, product)
+
+        # MCP takes priority when enabled
+        if self._mcp_tools:
+            return self._fetch_via_mcp(search_name, product)
+
+        try:
+            assets = self._svc.search_assets(search_name)
+            if not assets:
+                return None
+            asset    = assets[0]
+            asset_id = asset.get("id", "")
+            dq_data  = {}
+            try:
+                dq_data = self._svc.get_data_quality(asset_id)
+            except Exception:
+                pass
+            return {
+                "asset_id":     asset_id,
+                "asset_name":   asset.get("name", search_name),
+                "asset_type":   asset.get("type", "Business Metric"),
+                "domain":       asset.get("domain", ""),
+                "status":       asset.get("status", "Unknown"),
+                "owner":        asset.get("owner", ""),
+                "steward":      asset.get("steward", ""),
+                "data_quality": dq_data,
+            }
+        except Exception as exc:
+            self.logger.warning("Collibra fetch failed for %s: %s", product, exc)
+            return None
+
+    def _fetch_via_mcp(self, search_name: str, product: str) -> Optional[Dict]:
+        try:
+            tool = next(
+                (t for t in self._mcp_tools if "search" in t.name.lower()), None
+            )
+            if not tool:
+                return None
+            raw = tool.run({"name": search_name})
+            return {"asset_name": search_name, "raw": raw}
+        except Exception as exc:
+            self.logger.warning("Collibra MCP fetch failed for %s: %s", product, exc)
+            return None
+
+    # ── IAgent ────────────────────────────────────────────────────────────
 
     def _execute(self, request: AgentRequest) -> AgentResult:
         products = request.data_products or self._resolve_products(request.query)
         results: Dict[str, Dict] = {}
-        sources: List[str] = []
+        sources: List[str]       = []
 
         for product in products:
             asset = self._fetch_asset(product)
             if asset:
                 results[product] = asset
-                sources.append(f"Collibra DGC: {asset.get('name', product)}")
+                sources.append(f"Collibra DGC: {asset.get('asset_name', product)}")
 
         if not results:
             return AgentResult(
@@ -123,93 +136,53 @@ class MetadataAgent(BaseAgent):
                 confidence=0.5,
             )
 
-        summary = self._build_summary(results)
-        overall_dq = self._compute_overall_dq(results)
-
         return AgentResult(
             agent_name=self.name,
             success=True,
             data=results,
-            summary=summary,
+            summary=self._build_summary(results),
             sources=sources,
             confidence=0.93,
-            metadata={"overall_dq_score": overall_dq, "products": products},
+            metadata={
+                "overall_dq_score": self._compute_overall_dq(results),
+                "products": products,
+            },
         )
 
-    def _fetch_asset(self, product: str) -> Optional[Dict]:
-        """Fetch asset via MCP tools or REST client."""
-        search_name = _PRODUCT_SEARCH_NAMES.get(product, product)
+    # ── Summary formatting ────────────────────────────────────────────────
 
-        if self._mcp_tools:
-            return self._fetch_via_mcp(search_name, product)
-        return self._fetch_via_rest(search_name, product)
-
-    def _fetch_via_rest(self, search_name: str, product: str) -> Optional[Dict]:
-        try:
-            assets = self._client.search_assets(search_name)
-            if not assets:
-                return None
-            asset = assets[0]
-            asset_id = asset.get("id")
-            dq_data = {}
-            try:
-                dq_data = self._client.get_data_quality(asset_id)
-            except Exception:
-                pass  # DQ endpoint may not be enabled on all Collibra instances
-            return {
-                "asset_id":   asset_id,
-                "asset_name": asset.get("displayName", search_name),
-                "asset_type": asset.get("type", {}).get("name", "Business Metric"),
-                "domain":     asset.get("domain", {}).get("name", ""),
-                "status":     asset.get("status", {}).get("name", "Unknown"),
-                "data_quality": dq_data,
-                "raw": asset,
-            }
-        except Exception as exc:
-            self.logger.warning("Collibra REST fetch failed for %s: %s", product, exc)
-            return None
-
-    def _fetch_via_mcp(self, search_name: str, product: str) -> Optional[Dict]:
-        try:
-            # Use the first search tool available from the MCP server
-            search_tool = next(
-                (t for t in self._mcp_tools if "search" in t.name.lower()), None
-            )
-            if not search_tool:
-                return None
-            raw = search_tool.run({"name": search_name})
-            return {"asset_name": search_name, "raw": raw}
-        except Exception as exc:
-            self.logger.warning("Collibra MCP fetch failed for %s: %s", product, exc)
-            return None
-
-    def _dq_icon(self, score: int) -> str:
+    @staticmethod
+    def _dq_icon(score: float) -> str:
         if score >= 85: return "🟢"
         if score >= 70: return "🟡"
         return "🔴"
 
     def _compute_overall_dq(self, results: Dict) -> Optional[float]:
         scores = [
-            r.get("data_quality", {}).get("overall_score")
+            r["data_quality"].get("score")
             for r in results.values()
             if isinstance(r.get("data_quality"), dict)
-            and r["data_quality"].get("overall_score") is not None
+            and r["data_quality"].get("score") is not None
         ]
         return round(sum(scores) / len(scores), 1) if scores else None
 
     def _build_summary(self, results: Dict) -> str:
-        if not results:
-            return "No governance metadata found."
         parts = ["🏛️ **Governance & Metadata**"]
         for product, asset in results.items():
-            name = asset.get("asset_name", product.upper())
+            name   = asset.get("asset_name", product.upper())
             status = asset.get("status", "Unknown")
             parts.append(f"\n**{name}** — Status: {status}")
+            if asset.get("owner"):
+                parts.append(f"  • Owner: {asset['owner']}")
+            if asset.get("steward"):
+                parts.append(f"  • Steward: {asset['steward']}")
             if asset.get("domain"):
                 parts.append(f"  • Domain: {asset['domain']}")
             dq = asset.get("data_quality", {})
             if dq and isinstance(dq, dict):
-                score = dq.get("overall_score")
+                score = dq.get("score") or dq.get("overall_score")
                 if score is not None:
                     parts.append(f"  • DQ Score: {self._dq_icon(score)} {score}/100")
+                if dq.get("failed", 0):
+                    parts.append(f"  • Failed Rules: {dq['failed']}/{dq.get('total_rules', '?')}")
         return "\n".join(parts)

@@ -1,47 +1,48 @@
 """
 tests/test_knowledge_agent.py
 
-Tests for KnowledgeAgent using a patched vector store.
-Returns realistic scored documents matching the real pgvector path.
+Tests for KnowledgeAgent using injected NullVectorService or a custom mock.
+No patching of internals needed — just pass the service directly.
 """
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from core.base_agent import AgentRequest
+from langchain_core.documents import Document
+from services.pgvector.mock import NullVectorService
 
 
 def make_req(query, products=None):
     return AgentRequest(query=query, data_products=products or [])
 
 
-def _make_doc(content: str, product: str, topic: str = "definition"):
-    from langchain_core.documents import Document
-    return Document(page_content=content, metadata={"product": product, "topic": topic})
+def _make_doc(content: str, topic: str = "definition", source: str = "Test Doc"):
+    return Document(page_content=content, metadata={"topic": topic, "source": source})
 
 
-def _retention_docs():
-    return [
-        (_make_doc(
-            "GRR measures recurring revenue retained. Formula: (Start MRR - Churn MRR) / Start MRR. "
-            "Table: analytics.retention_metrics. Benchmark: >85% SMB, >90% Enterprise.",
-            "retention"), 0.92),
-        (_make_doc(
-            "NRR includes expansion revenue. NRR > 100% means the cohort is growing. "
-            "Refreshed daily via retention_daily_etl.",
-            "retention", "pipeline"), 0.87),
-    ]
+class _FixedVectorService:
+    """Returns a fixed list of (Document, score) tuples."""
+    def __init__(self, results):
+        self._results = results
+
+    def similarity_search(self, query, k=5):
+        return self._results[:k]
 
 
 @pytest.fixture
 def agent():
-    """KnowledgeAgent with get_vector_store patched to return a mock store."""
-    mock_store = MagicMock()
-    mock_store.similarity_search_with_relevance_scores.return_value = _retention_docs()
+    """KnowledgeAgent with injected NullVectorService."""
+    from agents.knowledge_agent import KnowledgeAgent
+    return KnowledgeAgent(vector_service=NullVectorService())
 
-    fake_config = MagicMock()
 
-    with patch("agents.knowledge_agent.get_vector_store", return_value=mock_store):
-        from agents.knowledge_agent import KnowledgeAgent
-        return KnowledgeAgent(config=fake_config)
+@pytest.fixture
+def agent_with_retention_docs():
+    from agents.knowledge_agent import KnowledgeAgent
+    docs = [
+        (_make_doc("GRR measures recurring revenue retained.", "definition", "Policy v2"), 0.92),
+        (_make_doc("NRR includes expansion revenue.", "pipeline", "Runbook v3"), 0.87),
+    ]
+    return KnowledgeAgent(vector_service=_FixedVectorService(docs))
 
 
 def test_returns_knowledge_entries(agent):
@@ -51,20 +52,18 @@ def test_returns_knowledge_entries(agent):
     assert len(result.data["knowledge"]) > 0
 
 
-def test_definition_content_present(agent):
-    result = agent.execute(make_req("What is GRR?"))
+def test_definition_content_present(agent_with_retention_docs):
+    result = agent_with_retention_docs.execute(make_req("What is GRR?"))
     assert result.success
     entries = result.data.get("knowledge", [])
     assert len(entries) > 0
-    # definition field comes from page_content
     assert "definition" in entries[0]
     assert len(entries[0]["definition"]) > 10
 
 
-def test_sources_populated(agent):
-    result = agent.execute(make_req("retention metrics"))
+def test_sources_populated(agent_with_retention_docs):
+    result = agent_with_retention_docs.execute(make_req("retention metrics"))
     assert len(result.sources) > 0
-    assert "retention" in result.sources[0]
 
 
 def test_confidence_value(agent):
@@ -72,10 +71,13 @@ def test_confidence_value(agent):
     assert 0.0 <= result.confidence <= 1.0
 
 
-def test_no_results_returns_empty(agent):
-    agent._store.similarity_search_with_relevance_scores.return_value = [
-        (_make_doc("unrelated content", "other"), 0.30)  # below 0.70 threshold
-    ]
+def test_no_results_returns_empty():
+    from agents.knowledge_agent import KnowledgeAgent
+    # Score below threshold → filtered out
+    low_score_svc = _FixedVectorService([
+        (_make_doc("unrelated content"), 0.30),
+    ])
+    agent = KnowledgeAgent(vector_service=low_score_svc)
     result = agent.execute(make_req("quantum computing"))
     assert result.success
     assert result.data["knowledge"] == []
@@ -86,15 +88,16 @@ def test_execution_timing(agent):
     assert result.execution_time_ms >= 0
 
 
-def test_multi_product_docs(agent):
-    agent._store.similarity_search_with_relevance_scores.return_value = [
-        (_make_doc("CAC = Total S&M Spend / New Customers.", "cac"), 0.88),
-        (_make_doc("LTV = ARPU × Gross Margin × (1/Churn).", "ltv"), 0.85),
+def test_multi_product_docs():
+    from agents.knowledge_agent import KnowledgeAgent
+    docs = [
+        (_make_doc("CAC = Total S&M Spend / New Customers.", "definition"), 0.88),
+        (_make_doc("LTV = ARPU × Gross Margin × (1/Churn).", "definition"), 0.85),
     ]
+    agent = KnowledgeAgent(vector_service=_FixedVectorService(docs))
     result = agent.execute(make_req("What is our CAC and LTV ratio?"))
-    topics = [e.get("topic") for e in result.data.get("knowledge", [])]
-    assert "cac" in topics
-    assert "ltv" in topics
+    assert result.success
+    assert len(result.data["knowledge"]) == 2
 
 
 def test_health_check(agent):

@@ -48,10 +48,12 @@ class TestVectorDBConfig:
 class TestVectorStoreMockMode:
 
     def test_get_vector_store_returns_null_in_mock(self):
-        from core.vector_store import get_vector_store, _NullVectorStore
+        from core.vector_store import get_vector_store
+        from services.pgvector.mock import NullVectorService as _NullVectorStore
         from config.settings   import VectorDBConfig
         store = get_vector_store(VectorDBConfig())
-        assert isinstance(store, _NullVectorStore)
+        inner = getattr(store, "_svc", store)
+        assert isinstance(inner, _NullVectorStore)
 
     def test_similarity_search_returns_list(self):
         from core.vector_store import get_vector_store, similarity_search
