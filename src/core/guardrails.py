@@ -23,12 +23,37 @@ MAX_LENGTH = 2_000   # characters
 # ── Patterns ───────────────────────────────────────────────────────────────
  
 # Destructive SQL — block entirely
+#
+# Two tiers:
+#   Tier 1 — SQL syntax (original): DROP TABLE, DELETE FROM, etc.
+#   Tier 2 — Natural-language destruction requests: "delete database",
+#             "wipe all records", "remove all data", "erase the table", etc.
+#             These must be caught even when the user types plain English.
 _DESTRUCTIVE = [
-    re.compile(r"\bdrop\s+table\b",     re.I),
-    re.compile(r"\bdelete\s+from\b",    re.I),
-    re.compile(r"\btruncate\b",         re.I),
-    re.compile(r"\balter\s+table\b",    re.I),
-    re.compile(r"\bdrop\s+database\b",  re.I),
+    # ── Tier 1: SQL syntax ─────────────────────────────────────────────
+    re.compile(r"\bdrop\s+table\b",                         re.I),
+    re.compile(r"\bdelete\s+from\b",                        re.I),
+    re.compile(r"\btruncate\b",                             re.I),
+    re.compile(r"\balter\s+table\b",                        re.I),
+    re.compile(r"\bdrop\s+database\b",                      re.I),
+    re.compile(r"\bdrop\s+schema\b",                        re.I),
+    re.compile(r"\bdrop\s+view\b",                          re.I),
+
+    # ── Tier 2: natural-language destruction requests ──────────────────
+    # "delete database / the database / all databases"
+    re.compile(r"\bdelete\s+(the\s+|all\s+|our\s+)?database", re.I),
+    # "delete all data / records / rows / tables / everything"
+    re.compile(r"\bdelete\s+(all\s+)?(data|records|rows|tables|entries|everything)\b", re.I),
+    # "drop / remove / erase / wipe + data/database/records/table/everything"
+    re.compile(r"\b(drop|remove|erase|wipe)\s+(all\s+|the\s+)?(data|database|records|rows|tables|entries|everything)\b", re.I),
+    # "purge data / records / database"
+    re.compile(r"\bpurge\s+(all\s+)?(data|records|database|tables)\b", re.I),
+    # "destroy the database / data"
+    re.compile(r"\bdestroy\s+(the\s+)?(data|database|records|tables)\b", re.I),
+    # "clear all data / records / tables"
+    re.compile(r"\bclear\s+(all\s+)?(data|records|tables|entries|database)\b", re.I),
+    # "flush all data / records"
+    re.compile(r"\bflush\s+(all\s+)?(data|records|tables)\b", re.I),
 ]
  
 # Prompt injection — block
@@ -130,4 +155,3 @@ def run_guardrails(query: str) -> GuardrailResult:
         pii_found=pii_found,
         checks_run=checks,
     )
- 

@@ -1,40 +1,63 @@
+"""
+src/memory/checkpointer.py
+Persistent conversation memory via LangGraph checkpointers.
+
+Dev:  SqliteSaver (file-based, zero setup) — falls back to MemorySaver
+      if the installed langgraph-checkpoint-sqlite is incompatible.
+Prod: PostgresSaver (shared across ECS tasks)
+"""
+from __future__ import annotations
+
 import os
-from langgraph.checkpoint.sqlite import SqliteSaver
+import logging
 from pathlib import Path
-import sqlite3
+
+logger = logging.getLogger(__name__)
+
 
 def get_checkpointer():
     """
-    Dev:  SqliteSaver — file-based, zero setup
-    Prod: PostgresSaver — shared across ECS tasks
+    Return the best available checkpointer for the current environment.
+
+    Priority:
+      1. production  → PostgresSaver (if DATABASE_URL set)
+      2. development → SqliteSaver   (if langgraph-checkpoint-sqlite compatible)
+      3. fallback    → MemorySaver   (in-process, no persistence — dev/CI only)
     """
     env = os.getenv("ENVIRONMENT", "development")
 
+    # ── Production: Postgres ───────────────────────────────────────────
     if env == "production":
-        try:
-            from langgraph.checkpoint.postgres import (
-                PostgresSaver
-            )
-            return PostgresSaver.from_conn_string(
-                os.getenv("DATABASE_URL",
-                           "postgresql://localhost/copilot")
-            )
-        except Exception as e:
-            print(f"Postgres unavailable, using SQLite: {e}")
+        db_url = os.getenv("DATABASE_URL", "")
+        if db_url:
+            try:
+                from langgraph.checkpoint.postgres import PostgresSaver
+                saver = PostgresSaver.from_conn_string(db_url)
+                logger.info("checkpointer → PostgresSaver")
+                return saver
+            except Exception as exc:
+                logger.warning("PostgresSaver unavailable (%s) — falling back", exc)
 
-    # Default: SQLite
-    db_path = Path(
-        os.getenv("SQLITE_PATH", os.path.join("..","data","memory.db"))
-    )
-    #print(f"PATH : {db_path}")
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    print(f"PATH : {db_path}")
-    # Use proper SQLite connection string format
-    #conn_string = f"sqlite:///{db_path.resolve()}"
-    #checkpointer = SqliteSaver.from_conn_string(conn_string)
-    conn = sqlite3.connect(db_path, check_same_thread=False)
-    
-    # Create SqliteSaver
-    persistent_memory = SqliteSaver(conn)
-    print(f"checkpointer : {persistent_memory}")
-    return persistent_memory
+    # ── Development: SQLite ───────────────────────────────────────────
+    try:
+        import sqlite3
+        from langgraph.checkpoint.sqlite import SqliteSaver
+
+        db_path = Path(os.getenv("SQLITE_PATH", "./data/memory.db"))
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        saver = SqliteSaver(conn)
+        logger.info("checkpointer → SqliteSaver at %s", db_path)
+        print(f"[checkpointer] SqliteSaver at {db_path}")
+        return saver
+    except Exception as exc:
+        logger.warning(
+            "SqliteSaver unavailable (%s) — falling back to MemorySaver (no persistence)",
+            exc,
+        )
+
+    # ── Final fallback: in-memory ──────────────────────────────────────
+    from langgraph.checkpoint.memory import MemorySaver
+    logger.info("checkpointer → MemorySaver (in-process, not persisted)")
+    print("[checkpointer] MemorySaver (conversations will NOT persist across restarts)")
+    return MemorySaver()
