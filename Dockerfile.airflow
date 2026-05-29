@@ -16,6 +16,6 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 # Copy project source so DAGs can import from src/
 COPY --chown=airflow:root src/ /opt/airflow/src/
 COPY --chown=airflow:root dags/ /opt/airflow/dags/
-COPY --chown=airflow:root ingestion/ /opt/airflow/ingestion/ 2>/dev/null || true
+COPY --chown=airflow:root ingestion/ /opt/airflow/ingestion/
 
 ENV PYTHONPATH=/opt/airflow

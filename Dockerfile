@@ -32,9 +32,9 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY src/ ./src/
 COPY dags/ ./dags/
 COPY scripts/ ./scripts/
-COPY ingestion/ ./ingestion/ 2>/dev/null || true
-COPY data/ ./data/
-COPY docs/ ./docs/
+COPY ingestion/ ./ingestion/
+#COPY data/ ./data/
+#COPY docs/ ./docs/
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app

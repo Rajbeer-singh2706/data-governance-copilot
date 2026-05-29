@@ -39,7 +39,7 @@ with DAG(
 
     def _load_docs(**context):
         import glob
-        from src.ingestion.loaders import load_document
+        from ingestion.loaders import load_document
 
         pattern = os.path.join(DOCS_PATH, "**", "*.*")
         files = glob.glob(pattern, recursive=True)
