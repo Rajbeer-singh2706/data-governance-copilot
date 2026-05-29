@@ -12,6 +12,8 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";   -- for gen_random_uuid()
 
+
+
 -- ── 2. Document embeddings table ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS document_embeddings (
     id           UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -61,3 +63,34 @@ BEGIN
     RAISE NOTICE 'Ready for langchain-postgres PGVector.';
 END;
 $$;
+
+
+-- One-time pgvector database setup
+-- Run: psql -U postgres -d governance_db -f scripts/init_pgvector.sql
+
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- langchain_postgres creates this table automatically on first use,
+-- but we ensure the extension and schema exist.
+CREATE SCHEMA IF NOT EXISTS public;
+
+-- Optional: pre-create the embeddings table for visibility
+-- langchain_postgres will manage the actual schema via PGVector.create_tables_if_not_exists()
+-- This is a no-op if table already exists.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT FROM information_schema.tables
+        WHERE table_schema = 'public'
+        AND table_name = 'langchain_pg_embedding'
+    ) THEN
+        RAISE NOTICE 'Table langchain_pg_embedding will be created by langchain_postgres on first use.';
+    ELSE
+        RAISE NOTICE 'Table langchain_pg_embedding already exists.';
+    END IF;
+END
+$$;
+
+-- Create airflow DB (separate from governance_db)
+-- Run this as superuser before starting Airflow:
+-- CREATE DATABASE airflow_db;

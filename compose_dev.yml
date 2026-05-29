@@ -1,0 +1,109 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Data Governance Copilot — Docker Compose
+#
+# Services:
+#   app        — Streamlit UI  (port 8501)
+#   api        — FastAPI + SSE (port 8000)  [Day 16+]
+#   redis      — Cache backend              [Day 14+]
+#
+# Usage:
+#   docker compose up                  # all services
+#   docker compose up app redis        # UI + cache only
+#   docker compose up api redis        # API + cache only
+#   docker compose logs -f app         # tail logs
+#   docker compose down -v             # stop + wipe volumes
+# ═══════════════════════════════════════════════════════════════════════════
+
+x-app-common: &app-common            # shared config reused by app + api
+  build:
+    context: .
+    dockerfile: Dockerfile
+  env_file: .env
+  environment:
+    # Override REDIS_HOST so containers talk to the redis service, not localhost
+    REDIS_HOST: "redis"
+    REDIS_PORT: "6379"
+    REDIS_ENABLED: "true"
+    REDIS_PASSWORD: ""
+    PYTHONPATH: /app/src
+  depends_on:
+    redis:
+      condition: service_healthy
+  volumes:
+    - ./data:/app/data          # SQLite memory DB persists across restarts
+    - ./logs:/app/logs          # structured JSON logs on host
+  restart: unless-stopped
+
+services:
+
+  # ── Streamlit UI ──────────────────────────────────────────────────────────
+  app:
+    <<: *app-common
+    container_name: copilot_ui
+    ports:
+      - "8501:8501"
+    command:
+      - streamlit
+      - run
+      - src/ui/app.py
+      - --server.port=8501
+      - --server.address=0.0.0.0
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+  # ── FastAPI (Day 16+) ─────────────────────────────────────────────────────
+  api:
+    <<: *app-common
+    container_name: copilot_api
+    ports:
+      - "8000:8000"
+    command:
+      - uvicorn
+      - src.api.app:app
+      - --host=0.0.0.0
+      - --port=8000
+      - --workers=2
+      - --log-level=info
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 45s
+      retries: 3
+    profiles:
+      - api          # only starts with: docker compose --profile api up
+
+  # ── Redis ─────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: copilot_redis
+    ports:
+      - "6379:6379"             # exposed so you can redis-cli from host
+    command:
+      - redis-server
+      - --maxmemory 256mb
+      - --maxmemory-policy allkeys-lru
+      - --save ""               # disable RDB snapshots — cache doesn't need durability
+      - --appendonly no         # disable AOF — same reason
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+    name: copilot_redis_data    # explicit name so it survives compose down (without -v)
