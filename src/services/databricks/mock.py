@@ -1,111 +1,50 @@
-"""
-src/services/databricks/mock.py
-Mock Databricks service — returns realistic canned data for dev / CI.
-
-No network calls, no credentials required.
-Satisfies IDataService protocol.
-
-Data is keyed on table name so queries to different analytics tables
-get different but consistent results across calls.
-"""
+"""Mock Databricks service with canned analytics rows."""
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Dict, List
 
+_RETENTION_NORMAL = [
+    {"product": "retention", "grr": 92.5, "nrr": 108.3, "churn_rate": 7.5,
+     "active_customers": 1240, "period": "2024-Q1"},
+]
+_RETENTION_LOW = [
+    {"product": "retention", "grr": 78.0, "nrr": 95.1, "churn_rate": 22.0,
+     "active_customers": 980, "period": "2024-Q1"},
+]
+_BOOKINGS = [
+    {"product": "bookings", "arr": 4_200_000, "new_bookings": 380_000,
+     "expansion": 120_000, "churn_value": 45_000, "period": "2024-Q1"},
+]
+_CAC = [
+    {"product": "cac", "blended_cac": 2850, "sales_cac": 3100,
+     "marketing_cac": 2600, "payback_months": 14, "period": "2024-Q1"},
+]
+_LTV = [
+    {"product": "ltv", "avg_ltv": 38_500, "ltv_cac_ratio": 13.5,
+     "median_ltv": 32_000, "p90_ltv": 72_000, "period": "2024-Q1"},
+]
 
-# ── Canned metric rows per analytics table ─────────────────────────────────
-_MOCK_DATA: Dict[str, List[Dict[str, Any]]] = {
-    "analytics.retention_metrics": [
-        {
-            "period":                "last_month",
-            "gross_retention_rate":  88.4,
-            "net_retention_rate":    104.2,
-            "churn_rate":            2.1,
-            "at_risk_accounts":      12,
-            "renewed_accounts":      423,
-            "churned_accounts":      9,
-        }
-    ],
-    "analytics.bookings_fact": [
-        {
-            "period":                   "last_month",
-            "total_bookings":           4_250_000,
-            "net_new_bookings":         820_000,
-            "expansion_bookings":       310_000,
-            "bookings_vs_target_pct":   3.2,
-            "arr":                      51_000_000,
-        }
-    ],
-    "analytics.cac_metrics": [
-        {
-            "period":                "last_month",
-            "blended_cac":           8_400,
-            "payback_period_months": 14,
-            "sales_cac":             11_200,
-            "marketing_cac":         5_600,
-        }
-    ],
-    "analytics.customer_ltv": [
-        {
-            "period":        "last_month",
-            "avg_ltv":       72_000,
-            "ltv_cac_ratio": 8.6,
-            "ltv_by_segment": {
-                "enterprise": 210_000,
-                "mid_market":  58_000,
-                "smb":         18_000,
-            },
-        }
-    ],
-    # rule evaluation — CASE WHEN expressions land here when table is unknown
-    "default": [{"result": 1}],
-}
-
-# Anomaly scenario: GRR below threshold (used in HITL tests)
-_LOW_GRR_SCENARIO: Dict[str, Any] = {
-    "period":                "last_month",
-    "gross_retention_rate":  78.0,   # below 85% threshold → triggers anomaly
-    "net_retention_rate":    91.0,
-    "churn_rate":            7.5,
-    "at_risk_accounts":      47,     # above 30 → second anomaly
-    "renewed_accounts":      310,
-    "churned_accounts":      28,
+_TABLE_MAP = {
+    "retention_metrics": _RETENTION_NORMAL,
+    "bookings_fact": _BOOKINGS,
+    "cac_metrics": _CAC,
+    "customer_ltv": _LTV,
 }
 
 
 class MockDatabricksService:
-    """
-    In-memory mock satisfying IDataService.
-    Parses the FROM clause to choose which canned table to return.
-    """
-
-    def __init__(self, low_grr: bool = False) -> None:
-        """
-        Args:
-            low_grr: If True, retention rows trigger anomaly detection
-                     (used in integration / HITL tests).
-        """
+    def __init__(self, low_grr: bool = False):
         self._low_grr = low_grr
 
-    # ── IDataService ──────────────────────────────────────────────────────
-
-    def query(self, sql: str) -> List[Dict[str, Any]]:
-        """Return canned rows for the table referenced in FROM clause."""
-        table = self._extract_table(sql)
-        rows  = self._get_rows(table)
-        return rows
-
-    # ── Internal ──────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _extract_table(sql: str) -> str:
-        """Best-effort parse of 'FROM <table>' from a SQL string."""
-        match = re.search(r"\bFROM\s+([\w.]+)", sql, re.IGNORECASE)
-        return match.group(1).lower() if match else "default"
-
-    def _get_rows(self, table: str) -> List[Dict[str, Any]]:
-        rows = _MOCK_DATA.get(table, _MOCK_DATA["default"])
-        if table == "analytics.retention_metrics" and self._low_grr:
-            return [_LOW_GRR_SCENARIO]
-        return rows
+    def query(self, sql: str) -> List[Dict]:
+        # Parse FROM clause to pick the right canned data
+        match = re.search(r"FROM\s+\w+\.(\w+)", sql, re.IGNORECASE)
+        table = match.group(1).lower() if match else ""
+        if "retention" in table:
+            return _RETENTION_LOW if self._low_grr else _RETENTION_NORMAL
+        for key, rows in _TABLE_MAP.items():
+            if key in table:
+                return rows
+        # Generic fallback
+        return [{"result": "no data", "sql": sql}]

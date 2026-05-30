@@ -96,9 +96,9 @@ with DAG(
 
     def _re_embed_delta(**context):
         """Re-embed only changed files."""
-        from ingestion.loaders import load_document
-        from ingestion.chunker import chunk_documents
-        from ingestion.embedder import embed_chunks
+        from src.ingestion.loaders import load_document
+        from src.ingestion.chunker import chunk_documents
+        from src.ingestion.embedder import embed_chunks
 
         changed_files: list = context["ti"].xcom_pull(task_ids="diff_hashes", key="changed_files")
 
@@ -132,7 +132,7 @@ with DAG(
     def _upsert(**context):
         """Upsert newly embedded chunks."""
         from langchain_core.documents import Document
-        from ingestion.store import upsert_chunks
+        from src.ingestion.store import upsert_chunks
 
         serialized = context["ti"].xcom_pull(task_ids="re_embed_delta", key="new_chunks_serialized") or []
         embeddings = context["ti"].xcom_pull(task_ids="re_embed_delta", key="new_embeddings") or []

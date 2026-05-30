@@ -1,21 +1,16 @@
 FROM apache/airflow:2.9.2-python3.12
 
 USER root
-
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
+    build-essential libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 USER airflow
 
-# Install project dependencies into Airflow's Python
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
-# Copy project source so DAGs can import from src/
 COPY --chown=airflow:root src/ /opt/airflow/src/
 COPY --chown=airflow:root dags/ /opt/airflow/dags/
-COPY --chown=airflow:root ingestion/ /opt/airflow/ingestion/
 
 ENV PYTHONPATH=/opt/airflow

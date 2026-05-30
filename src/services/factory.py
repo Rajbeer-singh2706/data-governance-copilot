@@ -1,128 +1,52 @@
-"""
-src/services/factory.py
-Service factory — the ONE place where ENABLE_MOCK is checked.
-
-Agents call get_service() and receive a protocol-conforming object.
-They never import a concrete class directly.
-
-Usage:
-    from services.factory import get_data_service, get_ticket_service
-    from services.factory import get_metadata_service, get_vector_service
-
-    class InformationAgent(BaseAgent):
-        def __init__(self, config, data_service=None):
-            self._db = data_service or get_data_service(config)
-
-Switching:
-    ENABLE_MOCK=true   → mock implementations (default in dev/CI)
-    ENABLE_MOCK=false  → real implementations (require credentials)
-
-If a real service raises EnvironmentError (missing credentials),
-the factory logs a warning and returns the mock instead — so the
-system always degrades gracefully rather than crashing at startup.
-"""
+"""Service factory — single switching point for mock vs real."""
 from __future__ import annotations
 
-import logging
 import os
-from typing import Optional
-
-from services.base import IDataService, IMetadataService, ITicketService, IVectorService
-
-logger = logging.getLogger(__name__)
 
 
-def _is_mock() -> bool:
+def _use_mock() -> bool:
     return os.getenv("ENABLE_MOCK", "true").lower() == "true"
 
 
-# ── Databricks ─────────────────────────────────────────────────────────────
-
-def get_data_service(config=None) -> IDataService:
-    """
-    Returns MockDatabricksService (mock mode) or DatabricksService (prod).
-    Falls back to mock if real service raises EnvironmentError.
-    """
-    if _is_mock():
-        from services.databricks.mock import MockDatabricksService
-        logger.debug("service.data → MockDatabricksService")
+def get_data_service(config=None):
+    from src.services.databricks.mock import MockDatabricksService
+    if _use_mock():
         return MockDatabricksService()
-
     try:
-        from services.databricks.real import DatabricksService
-        svc = DatabricksService(config.databricks if config else None)
-        logger.info("service.data → DatabricksService (real)")
-        return svc
-    except EnvironmentError as e:
-        logger.warning("DatabricksService unavailable (%s) — using mock", e)
-        from services.databricks.mock import MockDatabricksService
+        from src.services.databricks.real import DatabricksService
+        return DatabricksService(config)
+    except EnvironmentError:
         return MockDatabricksService()
 
 
-# ── Jira ───────────────────────────────────────────────────────────────────
-
-def get_ticket_service(config=None) -> ITicketService:
-    """
-    Returns MockJiraService (mock mode) or JiraService (prod).
-    Falls back to mock if real service raises EnvironmentError.
-    """
-    if _is_mock():
-        from services.jira.mock import MockJiraService
-        logger.debug("service.ticket → MockJiraService")
+def get_ticket_service(config=None):
+    from src.services.jira.mock import MockJiraService
+    if _use_mock():
         return MockJiraService()
-
     try:
-        from services.jira.real import JiraService
-        svc = JiraService()
-        logger.info("service.ticket → JiraService (real)")
-        return svc
-    except EnvironmentError as e:
-        logger.warning("JiraService unavailable (%s) — using mock", e)
-        from services.jira.mock import MockJiraService
+        from src.services.jira.real import JiraService
+        return JiraService()
+    except EnvironmentError:
         return MockJiraService()
 
 
-# ── Collibra ───────────────────────────────────────────────────────────────
-
-def get_metadata_service(config=None) -> IMetadataService:
-    """
-    Returns MockCollibraService (mock mode) or CollibraService (prod).
-    Falls back to mock if real service raises EnvironmentError.
-    """
-    if _is_mock():
-        from services.collibra.mock import MockCollibraService
-        logger.debug("service.metadata → MockCollibraService")
+def get_metadata_service(config=None):
+    from src.services.collibra.mock import MockCollibraService
+    if _use_mock():
         return MockCollibraService()
-
     try:
-        from services.collibra.real import CollibraService
-        svc = CollibraService()
-        logger.info("service.metadata → CollibraService (real)")
-        return svc
-    except EnvironmentError as e:
-        logger.warning("CollibraService unavailable (%s) — using mock", e)
-        from services.collibra.mock import MockCollibraService
+        from src.services.collibra.real import CollibraService
+        return CollibraService()
+    except EnvironmentError:
         return MockCollibraService()
 
 
-# ── pgvector ───────────────────────────────────────────────────────────────
-
-def get_vector_service(config=None) -> IVectorService:
-    """
-    Returns NullVectorService (mock mode) or PGVectorService (prod).
-    Falls back to NullVectorService if real service raises EnvironmentError.
-    """
-    if _is_mock():
-        from services.pgvector.mock import NullVectorService
-        logger.debug("service.vector → NullVectorService")
+def get_vector_service(config=None):
+    from src.services.pgvector.mock import NullVectorService
+    if _use_mock():
         return NullVectorService()
-
     try:
-        from services.pgvector.real import PGVectorService
-        svc = PGVectorService(config.vector_db if config else None)
-        logger.info("service.vector → PGVectorService (real)")
-        return svc
-    except EnvironmentError as e:
-        logger.warning("PGVectorService unavailable (%s) — using mock", e)
-        from services.pgvector.mock import NullVectorService
+        from src.services.pgvector.real import PGVectorService
+        return PGVectorService(config)
+    except EnvironmentError:
         return NullVectorService()

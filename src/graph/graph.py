@@ -1,136 +1,139 @@
-"""
-Day 13: Pre/post hooks wired into the StateGraph.
- 
-New flow:
-  START
-    → pre_hook          ← guardrails, PII redaction, timer start
-        ↓ (guardrail passed)           ↓ (blocked)
-    → supervisor                       ↘
-        → [agents in parallel]          → post_hook → END
-        → auto_ticket
-        → synthesizer
-        → post_hook
-        → END
- 
-The conditional edge `route_after_pre_hook` checks guardrail_passed:
-  True  → supervisor  (normal path)
-  False → post_hook   (short-circuit — final_summary already set by pre_hook)
-"""
+"""LangGraph StateGraph definition — sequential routing."""
+from __future__ import annotations
 
-from langgraph.graph import StateGraph, START, END
-from langgraph.types import Send
- 
-from graph.state import AgentState
-from graph.nodes import (
-    pre_hook_node,
-    supervisor_node,
-    information_node, 
-    knowledge_node,
-    metadata_node,    
-    capacity_node,
-    rule_node,
+from langgraph.graph import END, START, StateGraph
+
+from src.graph.nodes import (
     auto_ticket_node,
+    capacity_node,
+    information_node,
+    knowledge_node,
+    metadata_node,
+    post_hook,
+    pre_hook,
+    rule_node,
+    supervisor_node,
     synthesizer_node,
-    post_hook_node,
 )
-from memory.checkpointer import get_checkpointer
-
-# ── Conditional edge: after pre_hook ────────────────────────────────────── 
-def route_after_pre_hook(state: AgentState) -> str:
-    """
-    If guardrails blocked the query, skip all agents and go straight to
-    post_hook (which logs the blocked event and computes execution_ms).
-    """
-    if not state.get("guardrail_passed", True):
-        return "post_hook"
-    return "supervisor"
+from src.graph.state import AgentState
 
 
-# ── Conditional edge: supervisor fan-out ──────────────────────────────────
-def route_to_agents(state: AgentState):
-    """
-    Fan out to one or more agent nodes in parallel using Send().
-    Falls back to synthesizer if next_agents is empty.
-    """
-    next_agents = state.get("next_agents", [])
- 
-    if not next_agents:
-        return "synthesizer"
- 
+def _guardrail_router(state: AgentState) -> str:
+    return "supervisor" if state.get("guardrail_passed", True) else "post_hook"
+
+
+def _agent_router(state: AgentState) -> str:
+    """Route to the first agent for the current intent."""
+    agents = state.get("next_agents", ["information"])
+    first = agents[0] if agents else "information"
     node_map = {
         "information": "information_node",
-        "knowledge":   "knowledge_node",
-        "metadata":    "metadata_node",
-        "capacity":    "capacity_node",
-        "rule":        "rule_node",
+        "knowledge": "knowledge_node",
+        "metadata": "metadata_node",
+        "capacity": "capacity_node",
+        "rule": "rule_node",
     }
- 
-    sends = [
-        Send(node_map[agent], state)
-        for agent in next_agents
-        if agent in node_map
-    ]
- 
-    return sends if sends else "synthesizer"
- 
- 
-# ── Graph assembly ─────────────────────────────────────────────────────────
-def build_graph():
-    """Compile the full LangGraph StateGraph with all Day 13 nodes."""
-    workflow = StateGraph(AgentState)
- 
-    # ── Register nodes ───────────────────────────────────────────────────
-    workflow.add_node("pre_hook",        pre_hook_node)
-    workflow.add_node("supervisor",      supervisor_node)
-    workflow.add_node("information_node", information_node)
-    workflow.add_node("knowledge_node",  knowledge_node)
-    workflow.add_node("metadata_node",   metadata_node)
-    workflow.add_node("capacity_node",   capacity_node)
-    workflow.add_node("rule_node",       rule_node)
-    workflow.add_node("auto_ticket",     auto_ticket_node)
-    workflow.add_node("synthesizer",     synthesizer_node)
-    workflow.add_node("post_hook",       post_hook_node)
- 
-    # ── Edges ────────────────────────────────────────────────────────────
-    # Entry
-    workflow.add_edge(START, "pre_hook")
- 
-    # pre_hook → supervisor (normal) OR post_hook (guardrail blocked)
-    workflow.add_conditional_edges(
+    return node_map.get(first, "information_node")
+
+
+def _after_first_agent(state: AgentState) -> str:
+    """After first agent runs, check if more agents are needed."""
+    agents = state.get("next_agents", [])
+    ran = state.get("_agents_ran", [])
+
+    remaining = [a for a in agents if a not in ran]
+    if not remaining:
+        return "auto_ticket"
+
+    node_map = {
+        "information": "information_node",
+        "knowledge": "knowledge_node",
+        "metadata": "metadata_node",
+        "capacity": "capacity_node",
+        "rule": "rule_node",
+    }
+    return node_map.get(remaining[0], "auto_ticket")
+
+
+def build_graph(checkpointer=None):
+    """Build and compile the LangGraph StateGraph."""
+    builder = StateGraph(AgentState)
+
+    # Nodes
+    builder.add_node("pre_hook", pre_hook)
+    builder.add_node("supervisor", supervisor_node)
+    builder.add_node("information_node", _wrap_agent("information", information_node))
+    builder.add_node("knowledge_node", _wrap_agent("knowledge", knowledge_node))
+    builder.add_node("metadata_node", _wrap_agent("metadata", metadata_node))
+    builder.add_node("capacity_node", _wrap_agent("capacity", capacity_node))
+    builder.add_node("rule_node", _wrap_agent("rule", rule_node))
+    builder.add_node("auto_ticket", auto_ticket_node)
+    builder.add_node("synthesizer", synthesizer_node)
+    builder.add_node("post_hook", post_hook)
+
+    # Edges
+    builder.add_edge(START, "pre_hook")
+    builder.add_conditional_edges(
         "pre_hook",
-        route_after_pre_hook,
-        ["supervisor", "post_hook"],
+        _guardrail_router,
+        {"supervisor": "supervisor", "post_hook": "post_hook"},
     )
- 
-    # supervisor → agents (parallel fan-out via Send)
-    workflow.add_conditional_edges(
+    builder.add_conditional_edges(
         "supervisor",
-        route_to_agents,
-        [
-            "information_node", "knowledge_node",
-            "metadata_node",    "capacity_node",
-            "rule_node",        "synthesizer",
-        ],
+        _agent_router,
+        {
+            "information_node": "information_node",
+            "knowledge_node": "knowledge_node",
+            "metadata_node": "metadata_node",
+            "capacity_node": "capacity_node",
+            "rule_node": "rule_node",
+        },
     )
- 
-    # All agent nodes → auto_ticket
-    for node in [
-        "information_node", "knowledge_node",
-        "metadata_node",    "capacity_node",
-        "rule_node",
-    ]:
-        workflow.add_edge(node, "auto_ticket")
- 
-    # Linear tail
-    workflow.add_edge("auto_ticket",  "synthesizer")
-    workflow.add_edge("synthesizer",  "post_hook")
-    workflow.add_edge("post_hook",    END)
- 
-    # Attach SQLite / Postgres checkpointer (persistent memory)
-    checkpointer = get_checkpointer()
-    ## redis ---> update here
-    return workflow.compile(checkpointer=checkpointer)
- 
- 
-# Singleton — compiled once at import time, reused by all callers
-copilot_graph = build_graph()
+
+    for node in ["information_node", "knowledge_node", "metadata_node",
+                 "capacity_node", "rule_node"]:
+        builder.add_conditional_edges(
+            node,
+            _after_first_agent,
+            {
+                "information_node": "information_node",
+                "knowledge_node": "knowledge_node",
+                "metadata_node": "metadata_node",
+                "capacity_node": "capacity_node",
+                "rule_node": "rule_node",
+                "auto_ticket": "auto_ticket",
+            },
+        )
+
+    builder.add_edge("auto_ticket", "synthesizer")
+    builder.add_edge("synthesizer", "post_hook")
+    builder.add_edge("post_hook", END)
+
+    kwargs = {}
+    if checkpointer is not None:
+        kwargs["checkpointer"] = checkpointer
+
+    return builder.compile(**kwargs)
+
+
+def _wrap_agent(name: str, node_fn):
+    """Wrap a node to track which agents have run."""
+    def wrapped(state: AgentState) -> dict:
+        result = node_fn(state)
+        ran = list(state.get("_agents_ran", []))
+        if name not in ran:
+            ran.append(name)
+        result["_agents_ran"] = ran
+        return result
+    wrapped.__name__ = node_fn.__name__
+    return wrapped
+
+
+_graph = None
+
+
+def get_graph(checkpointer=None):
+    global _graph
+    if _graph is None:
+        _graph = build_graph(checkpointer)
+    return _graph

@@ -1,164 +1,148 @@
-"""
-src/api/app.py  — NEW file (Day 16)
-FastAPI REST server with rate limiting and SSE streaming.
-"""
-
+"""FastAPI application — REST + SSE + Teams bot."""
 from __future__ import annotations
-import asyncio, json, os, sys, uuid
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
-from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException, Request
+import asyncio
+import json
+import os
+import uuid
+from typing import AsyncGenerator, Optional
+
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
+
+from src.api.middleware import limiter, user_limiter
+from src.graph.graph import get_graph
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from api.middleware  import limiter
-from config.settings import config
-from core.cache      import get_client
-from core.llm_guard  import check_and_record_tokens, estimate_tokens, get_daily_usage
-from graph.graph     import copilot_graph
-from graph.state     import initial_state
-
 
 app = FastAPI(title="Data Governance Copilot API", version="1.0.0")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-app.add_middleware(CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS","*").split(","),
-    allow_methods=["GET","POST"], allow_headers=["*"])
 
-_executor = ThreadPoolExecutor(max_workers=int(os.getenv("MAX_WORKERS","4")))
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 class QueryRequest(BaseModel):
-    query:         str
-    thread_id:     Optional[str]       = None
-    user_id:       Optional[str]       = "api-user"
-    time_range:    Optional[str]       = "last_month"
-    data_products: Optional[List[str]] = []
-    approved:      Optional[bool]      = False   # Day 15 HITL flag
-
-class QueryResponse(BaseModel):
-    query_id: str; 
-    thread_id: str; 
-    intent: str; 
-    summary: str
-    confidence: float; 
-    sources: List[str]; 
-    auto_tickets: List[str]
-    anomalies: List[str]; 
-    errors: List[dict]; 
-    execution_ms: float
-    pending_action: Optional[dict] = None
+    query: str
+    thread_id: str = "default"
+    user_id: str = "anonymous"
+    time_range: str = "last_30_days"
+    data_products: list = []
 
 
-async def _run_graph(body: QueryRequest) -> dict:
-    """Run sync LangGraph in thread pool — never blocks the async event loop."""
-    thread_id = body.thread_id or str(uuid.uuid4())
-    state = initial_state(query=body.query, thread_id=thread_id,
-                          user_id=body.user_id or "api-user",
-                          time_range=body.time_range or "last_month")
-    state["approved"] = body.approved or False
-    if body.data_products:
-        state["data_products"] = body.data_products
-    cfg    = {"configurable": {"thread_id": thread_id}}
-    loop   = asyncio.get_running_loop()
-    result = await loop.run_in_executor(_executor,
-                                        lambda: copilot_graph.invoke(state, config=cfg))
-    result["_thread_id"] = thread_id
+def _run_graph(query_req: QueryRequest) -> dict:
+    graph = get_graph()
+    state = {
+        "query": query_req.query,
+        "thread_id": query_req.thread_id,
+        "user_id": query_req.user_id,
+        "time_range": query_req.time_range,
+        "data_products": query_req.data_products,
+        "approved": False,
+    }
+    config = {"configurable": {"thread_id": query_req.thread_id}}
+    result = graph.invoke(state, config=config)
     return result
+
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+    return {"status": "ok", "service": "data-governance-copilot"}
 
 
-@app.post("/query", response_model=QueryResponse)
+@app.post("/query")
 @limiter.limit("20/minute")
-async def query_endpoint(request: Request, body: QueryRequest):
-    if not body.query.strip():
-        raise HTTPException(400, "query cannot be empty")
+async def query(request: Request, body: QueryRequest):
     try:
-        result = await _run_graph(body)
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, _run_graph, body)
+        return {
+            "query_id": result.get("query_id", str(uuid.uuid4())[:8]),
+            "summary": result.get("final_summary", ""),
+            "confidence": result.get("confidence", 0.0),
+            "anomalies": result.get("anomalies", []),
+            "sources": result.get("sources", []),
+            "execution_ms": result.get("execution_ms", 0),
+            "pending_action": result.get("pending_action"),
+        }
     except Exception as exc:
-        raise HTTPException(500, str(exc))
-    redis = get_client(config.redis)
-    if redis:
-        tokens = estimate_tokens(result.get("final_summary",""))
-        if not check_and_record_tokens(redis, tokens):
-            raise HTTPException(429, "Daily token budget exceeded. Resets at midnight UTC.")
-    return QueryResponse(
-        query_id=result.get("query_id","?"), thread_id=result["_thread_id"],
-        intent=result.get("intent","unknown"), summary=result.get("final_summary",""),
-        confidence=result.get("confidence",0.0), sources=result.get("sources",[]),
-        auto_tickets=result.get("auto_tickets",[]), anomalies=result.get("anomalies",[]),
-        errors=result.get("errors",[]), execution_ms=result.get("execution_ms",0.0),
-        pending_action=result.get("pending_action"),
-    )
+        raise HTTPException(status_code=500, detail=str(exc))
+
 
 @app.post("/query/stream")
 @limiter.limit("20/minute")
 async def query_stream(request: Request, body: QueryRequest):
-    """SSE streaming: start → result → done events."""
-    if not body.query.strip():
-        raise HTTPException(400, "query cannot be empty")
-
-    async def event_stream():
-        qid = str(uuid.uuid4())[:8]
-        yield f"data: {json.dumps({'type':'start','query_id':qid})}\n\n"
+    async def event_generator() -> AsyncGenerator[str, None]:
+        yield f"data: {json.dumps({'event': 'start', 'query': body.query})}\n\n"
         try:
-            result = await _run_graph(body)
-            payload = {"type":"result",
-                "query_id": result.get("query_id","?"),
-                "thread_id": result["_thread_id"],
-                "intent": result.get("intent","unknown"),
-                "summary": result.get("final_summary",""),
-                "confidence": result.get("confidence",0.0),
-                "execution_ms": result.get("execution_ms",0.0)}
-            yield f"data: {json.dumps(payload)}\n\n"
-            yield f"data: {json.dumps({'type':'done','execution_ms':result.get('execution_ms',0)})}\n\n"
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(None, _run_graph, body)
+            yield f"data: {json.dumps({'event': 'result', 'data': {'summary': result.get('final_summary', ''), 'anomalies': result.get('anomalies', []), 'confidence': result.get('confidence', 0)}})}\n\n"
         except Exception as exc:
-            yield f"data: {json.dumps({'type':'error','message':str(exc)})}\n\n"
+            yield f"data: {json.dumps({'event': 'error', 'message': str(exc)})}\n\n"
+        yield f"data: {json.dumps({'event': 'done'})}\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream",
-        headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no","Connection":"keep-alive"})
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.get("/history/{thread_id}")
 @limiter.limit("60/minute")
-async def history_endpoint(request: Request, thread_id: str):
-    try:
-        snap = copilot_graph.get_state({"configurable":{"thread_id":thread_id}})
-        if not snap or not snap.values:
-            return {"thread_id":thread_id,"turns":0,"history":[]}
-        history = snap.values.get("conversation_history",[])
-        return {"thread_id":thread_id,"turns":len(history),"history":history}
-    except Exception as exc:
-        raise HTTPException(500, str(exc))
+async def get_history(request: Request, thread_id: str):
+    return {"thread_id": thread_id, "messages": [], "note": "History requires checkpointer with persistent storage"}
 
 
 @app.get("/agents/status")
 @limiter.limit("120/minute")
 async def agents_status(request: Request):
-    redis = get_client(config.redis)
-    redis_ok = False
-    if redis:
-        try: redis.ping(); redis_ok=True
-        except: pass
-    agents = [{"name":n,"status":"ready"}
-              for n in ["information","knowledge","metadata","capacity","rule"]]
-    return {"status":"ok","version":"1.0.0","environment":config.environment,
-            "redis_ok":redis_ok,
-            "agents":agents,"daily_tokens":get_daily_usage(redis),
-            "timestamp":datetime.now(timezone.utc).isoformat()}
+    from src.core.cache import get_client
+    from src.core.llm_guard import get_daily_usage
+    from src.config.settings import get_config
+
+    client = get_client(get_config())
+    token_usage = get_daily_usage(client)
+    return {
+        "redis": "connected" if client else "unavailable",
+        "agents": ["information", "knowledge", "metadata", "capacity", "rule"],
+        "mock_mode": os.getenv("ENABLE_MOCK", "true"),
+        "token_usage": token_usage,
+    }
 
 
-# Add these two lines to src/api/app.py after the app = FastAPI(...) setup:
+@app.post("/ingest")
+@limiter.limit("10/minute")
+async def ingest(request: Request, file: UploadFile = File(...)):
+    """Upload a document and trigger Airflow on_demand_ingest_dag."""
+    import tempfile, shutil, httpx
 
-from teams.bot import router as teams_router   # ← add this
-app.include_router(teams_router)               # ← add this
+    suffix = os.path.splitext(file.filename or "doc.pdf")[1]
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = tmp.name
+
+    airflow_host = os.getenv("AIRFLOW_HOST", "localhost:8080")
+    airflow_user = os.getenv("AIRFLOW_ADMIN_USER", "admin")
+    airflow_pass = os.getenv("AIRFLOW_ADMIN_PASSWORD", "admin")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"http://{airflow_host}/api/v1/dags/on_demand_ingest_dag/dagRuns",
+                json={"conf": {"filepath": tmp_path}},
+                auth=(airflow_user, airflow_pass),
+                timeout=10,
+            )
+        return {"status": "triggered", "filepath": tmp_path, "dag_run": resp.json()}
+    except Exception as exc:
+        return {"status": "queued_locally", "filepath": tmp_path, "note": str(exc)}
+
+
+# Include Teams bot router
+from src.teams.bot import router as teams_router
+app.include_router(teams_router)

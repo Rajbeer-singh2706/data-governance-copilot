@@ -26,7 +26,7 @@ with DAG(
 ) as dag:
 
     def _load_single(**context):
-        from ingestion.loaders import load_document
+        from src.ingestion.loaders import load_document
 
         filepath = context["dag_run"].conf.get("filepath")
         if not filepath:
@@ -39,8 +39,8 @@ with DAG(
         return len(docs)
 
     def _chunk(**context):
-        from ingestion.loaders import load_document
-        from ingestion.chunker import chunk_documents
+        from src.ingestion.loaders import load_document
+        from src.ingestion.chunker import chunk_documents
 
         filepath = context["dag_run"].conf.get("filepath")
         docs = load_document(filepath)
@@ -50,9 +50,9 @@ with DAG(
         return len(chunks)
 
     def _embed(**context):
-        from ingestion.loaders import load_document
-        from ingestion.chunker import chunk_documents
-        from ingestion.embedder import embed_chunks
+        from src.ingestion.loaders import load_document
+        from src.ingestion.chunker import chunk_documents
+        from src.ingestion.embedder import embed_chunks
 
         filepath = context["dag_run"].conf.get("filepath")
         docs = load_document(filepath)
@@ -62,10 +62,10 @@ with DAG(
         return len(embeddings)
 
     def _store(**context):
-        from ingestion.loaders import load_document
-        from ingestion.chunker import chunk_documents
-        from ingestion.embedder import embed_chunks
-        from ingestion.store import upsert_chunks
+        from src.ingestion.loaders import load_document
+        from src.ingestion.chunker import chunk_documents
+        from src.ingestion.embedder import embed_chunks
+        from src.ingestion.store import upsert_chunks
 
         filepath = context["dag_run"].conf.get("filepath")
         docs = load_document(filepath)

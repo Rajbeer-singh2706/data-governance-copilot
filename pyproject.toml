@@ -1,81 +1,40 @@
-# ═══════════════════════════════════════════════════════════════════════════
-# Data Governance Copilot — pyproject.toml
-#
-# Python: 3.12  (3.13 skipped — C-ext friction with hiredis / psycopg2)
-#
-# IMPORTANT — LangChain version matrix:
-#   All langchain-* packages must stay on the SAME major line.
-#   This project uses the 0.3.x line (langchain-core 0.3.76).
-#   langchain-groq 1.x / langchain-litellm 0.6+ require langchain-core 1.x
-#   which is a fully different series — do NOT mix them.
-#
-#   Compatible provider versions for langchain-core 0.3.x:
-#     langchain-groq    == 0.3.8   (latest in 0.x series)
-#     langchain-litellm >= 0.3.0, < 0.7.0
-# ═══════════════════════════════════════════════════════════════════════════
-
 [build-system]
-requires      = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
 
 [project]
-name            = "data-governance-copilot"
-version         = "0.1.0"
-description     = "Agentic AI Data Governance & Analytics Assistant"
-requires-python = ">=3.12,<3.13"
-
-dependencies = [
-    "apache-airflow>=2.10.0",
-    "docx2txt>=0.8",
-    "fastapi>=0.111.0",
-    "hiredis>=2.3.0",
-    "httpx>=0.27.0",
-    "langchain==0.3.27",
-    "langchain-community==0.3.29",
-    "langchain-core==0.3.76",
-    "langchain-groq==0.3.8",
-    "langchain-litellm>=0.3.0,<0.7.0",
-    "langchain-mcp-adapters>=0.2.0",
-    "langchain-openai==0.3.33",
-    "langchain-postgres>=0.0.17",
-    "langchain-text-splitters>=0.3.0",
-    "langgraph>=1.0.0,<2.0.0",
-    "langgraph-checkpoint-sqlite>=3.0.0",
-    "langsmith>=0.2.0",
-    "mcp>=1.27.1",
-    "pgvector>=0.3.0",
-    "psycopg2-binary>=2.9.9",
-    "pydantic>=2.0.0,<3.0.0",
-    "pypdf>=4.0.0",
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-    "python-dotenv>=1.0.0",
-    "python-multipart>=0.0.9",
-    "redis>=5.0.0",
-    "requests>=2.31.0",
-    "slowapi>=0.1.9",
-    "sqlalchemy>=2.0.0,<3.0.0",
-    "sse-starlette>=2.1.0",
-    "streamlit>=1.35.0",
-    "unstructured>=0.14.0",
-    "uvicorn[standard]>=0.30.0",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-]
-
-[tool.setuptools.packages.find]
-where = ["src"]
+name = "data-governance-copilot"
+version = "1.0.0"
+description = "Agentic AI Data Governance & Analytics Assistant"
+requires-python = ">=3.12"
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
-testpaths  = ["tests"]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
 markers = [
-    "integration: marks tests as integration tests that hit live services (deselect with -m 'not integration')",
+    "integration: marks tests as integration tests (deselect with '-m not integration')",
+    "smoke: marks tests as smoke tests",
+]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+ignore = ["E501", "E402", "F401"]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "src/ui/*",
+    "src/teams/*",
+    "*/test_*",
 ]
 
-[tool.uv]
-compile-bytecode = true
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = false

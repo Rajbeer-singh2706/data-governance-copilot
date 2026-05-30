@@ -1,88 +1,50 @@
-"""
-src/config/settings.py
-Application configuration — loaded once at import time.
+"""Application configuration — all fields use default_factory for env var reads."""
+from __future__ import annotations
 
-All values come from environment variables (or .env file via python-dotenv).
-All values come from environment variables. See .env.example for required vars.
-"""
 import os
 from dataclasses import dataclass, field
-from dotenv import load_dotenv
 
-load_dotenv()
 
 @dataclass
 class LLMConfig:
-    """LLM provider configuration. Supports 'groq' and 'openai'."""
-
-    provider:      str   = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "groq"))
-    primary_model: str   = field(default_factory=lambda: os.getenv(
-        "LLM_MODEL", "llama-3.3-70b-versatile"   # plain model name, no prefix
-    ))
-    # API key — resolves from the right env var based on provider
-    api_key:       str   = field(default_factory=lambda: (
-        os.getenv("GROQ_API_KEY", "")
-        if os.getenv("LLM_PROVIDER", "groq").lower() == "groq"
-        else os.getenv("OPENAI_API_KEY", "")
-    ))
-
-    temperature:   float = 0.0
-    max_tokens:    int   = 4096
-    timeout:       int   = 30
-    max_retries:   int   = 3
-
-    fallback_models: list = field(default_factory=lambda: [
-        "gpt-4o-mini",
-        "anthropic/claude-haiku-4-5",
-        "gemini/gemini-1.5-flash",
-    ])
-
-    @property
-    def model(self) -> str:
-        """Backward-compat alias for primary_model."""
-        return self.primary_model
-
-@dataclass
-class DatabricksConfig:
-    host:      str = field(default_factory=lambda: os.getenv("DATABRICKS_HOST", ""))
-    token:     str = field(default_factory=lambda: os.getenv("DATABRICKS_TOKEN", ""))
-    http_path: str = field(default_factory=lambda: os.getenv("DATABRICKS_HTTP_PATH", ""))
-    catalog:   str = field(default_factory=lambda: os.getenv("DATABRICKS_CATALOG", "main"))
-    schema:    str = field(default_factory=lambda: os.getenv("DATABRICKS_SCHEMA", "analytics"))
+    provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "groq"))
+    model: str = field(default_factory=lambda: os.getenv("LLM_MODEL", "llama-3.3-70b-versatile"))
+    api_key: str = field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""))
+    temperature: float = 0.1
+    max_tokens: int = 2048
+    fallback_models: list = field(
+        default_factory=lambda: [
+            "gpt-4o-mini",
+            "anthropic/claude-haiku-4-5",
+            "gemini/gemini-1.5-flash",
+        ]
+    )
 
 
 @dataclass
 class RedisConfig:
-    host:        str  = field(default_factory=lambda: os.getenv("REDIS_HOST", "localhost"))
-    port:        int  = field(default_factory=lambda: int(os.getenv("REDIS_PORT", "6379")))
-    password:    str  = field(default_factory=lambda: os.getenv("REDIS_PASSWORD", ""))
-    db:          int  = 0
-    ttl_seconds: int  = 3600
-    # Set REDIS_ENABLED=false in .env if you don't have Redis running locally
-    enabled:     bool = field(default_factory=lambda: (
-        os.getenv("REDIS_ENABLED", "true").lower() == "true"
-    ))
+    host: str = field(default_factory=lambda: os.getenv("REDIS_HOST", "localhost"))
+    port: int = field(default_factory=lambda: int(os.getenv("REDIS_PORT", "6379")))
+    password: str = field(default_factory=lambda: os.getenv("REDIS_PASSWORD", ""))
+    enabled: bool = field(
+        default_factory=lambda: os.getenv("REDIS_ENABLED", "true").lower() == "true"
+    )
 
-    @property
-    def url(self) -> str:
-        if self.password:
-            return f"redis://:{self.password}@{self.host}:{self.port}/{self.db}"
-        return f"redis://{self.host}:{self.port}/{self.db}"
+
+@dataclass
+class DatabricksConfig:
+    host: str = field(default_factory=lambda: os.getenv("DATABRICKS_HOST", ""))
+    token: str = field(default_factory=lambda: os.getenv("DATABRICKS_TOKEN", ""))
+    http_path: str = field(default_factory=lambda: os.getenv("DATABRICKS_HTTP_PATH", ""))
 
 
 @dataclass
 class VectorDBConfig:
-    """
-    Day 18: PostgreSQL + pgvector connection for knowledge_agent RAG.
-    Run scripts/init_pgvector.sql once before using.
-    """
-    host:          str = field(default_factory=lambda: os.getenv("POSTGRES_HOST",     "localhost"))
-    port:          int = field(default_factory=lambda: int(os.getenv("POSTGRES_PORT", "5432")))
-    database:      str = field(default_factory=lambda: os.getenv("POSTGRES_DB",       "governance_db"))
-    user:          str = field(default_factory=lambda: os.getenv("POSTGRES_USER",     "postgres"))
-    password:      str = field(default_factory=lambda: os.getenv("POSTGRES_PASSWORD", ""))
-    table_name:    str = "document_embeddings"
-    embedding_dim: int = 1536   # text-embedding-3-small output dimension
+    host: str = field(default_factory=lambda: os.getenv("POSTGRES_HOST", "localhost"))
+    port: int = field(default_factory=lambda: int(os.getenv("POSTGRES_PORT", "5432")))
+    database: str = field(default_factory=lambda: os.getenv("POSTGRES_DB", "governance_db"))
+    user: str = field(default_factory=lambda: os.getenv("POSTGRES_USER", "postgres"))
+    password: str = field(default_factory=lambda: os.getenv("POSTGRES_PASSWORD", ""))
 
     @property
     def connection_string(self) -> str:
@@ -91,46 +53,30 @@ class VectorDBConfig:
             f"@{self.host}:{self.port}/{self.database}"
         )
 
+
 @dataclass
 class AppConfig:
-    debug:       bool = field(default_factory=lambda: os.getenv("DEBUG", "false").lower() == "true")
-    log_level:   str  = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
-    environment: str  = field(default_factory=lambda: os.getenv("ENVIRONMENT", "development"))  # FIX: was missing
+    environment: str = field(default_factory=lambda: os.getenv("ENVIRONMENT", "development"))
+    debug: bool = field(default_factory=lambda: os.getenv("DEBUG", "false").lower() == "true")
+    log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
+    sqlite_path: str = field(default_factory=lambda: os.getenv("SQLITE_PATH", "./data/memory.db"))
+    llm: LLMConfig = field(default_factory=LLMConfig)
+    databricks: DatabricksConfig = field(default_factory=DatabricksConfig)
+    redis: RedisConfig = field(default_factory=RedisConfig)
+    vector_db: VectorDBConfig = field(default_factory=VectorDBConfig)
 
-    llm:         LLMConfig        = field(default_factory=LLMConfig)
-    databricks:  DatabricksConfig = field(default_factory=DatabricksConfig)
-    redis:       RedisConfig      = field(default_factory=RedisConfig)
-    vector_db:   VectorDBConfig   = field(default_factory=VectorDBConfig)  # Day 18
+
+_config_singleton: AppConfig | None = None
 
 
-# Singleton — created once at import time, used everywhere
-config = AppConfig()
+def get_config() -> AppConfig:
+    global _config_singleton
+    if _config_singleton is None:
+        _config_singleton = AppConfig()
+    return _config_singleton
 
-# ── Data product registry ──────────────────────────────────────────────────
 
-DATA_PRODUCTS = {
-    "retention": {
-        "description": "% of customers renewing subscriptions",
-        "owner":       "Customer Success",
-        "table":       "analytics.retention_metrics",
-        "key_metrics": ["gross_retention_rate", "churn_rate"],
-    },
-    "bookings": {
-        "description": "Total revenue from signed contracts",
-        "owner":       "Revenue Operations",
-        "table":       "analytics.bookings_fact",
-        "key_metrics": ["total_bookings", "net_new_bookings"],
-    },
-    "cac": {
-        "description": "Cost to acquire a new customer",
-        "owner":       "Marketing Analytics",
-        "table":       "analytics.cac_metrics",
-        "key_metrics": ["blended_cac", "payback_period_months"],
-    },
-    "ltv": {
-        "description": "Predicted total revenue per customer",
-        "owner":       "Data Science",
-        "table":       "analytics.customer_ltv",
-        "key_metrics": ["avg_ltv", "ltv_cac_ratio"],
-    },
-}
+def reset_config() -> None:
+    """Reset singleton — for testing only."""
+    global _config_singleton
+    _config_singleton = None

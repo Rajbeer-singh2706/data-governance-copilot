@@ -1,192 +1,110 @@
-"""
-src/core/cache.py
-Day 14: Redis-backed cache with transparent in-memory fallback.
-
-Design decisions:
-  • Cache key  = SHA-256(query + data_products + time_range)
-    Same query with different products → different key.
-  • JSON serialisation — all cached values must be JSON-serialisable.
-    AgentResult.to_dict() already satisfies this.
-  • Fallback dict — when Redis is down the app never crashes.
-    Fallback is process-local (lost on restart), Redis is shared + persistent.
-  • TTLs are chosen per node based on how often the underlying data changes.
-
-TTL reference:
-  information_agent   1800s  (30 min) — SQL query results
-  knowledge_agent     7200s  (2 hrs)  — document embeddings / RAG
-  metadata_agent      3600s  (1 hr)   — Collibra metadata
-
-DO NOT cache:
-  capacity_node     — Jira is live data, tickets open/close constantly
-  auto_ticket_node  — write operation
-  synthesizer_node  — must combine fresh agent results every time
-"""
+"""Redis cache with in-memory fallback and @cached_node decorator."""
 from __future__ import annotations
 
+import functools
 import hashlib
-import inspect
 import json
-from functools import wraps
-from typing import Any, Callable
+import os
+import time
+from typing import Any, Optional
 
-from core.logging_utils import setup_logger
-
-logger = setup_logger("copilot.cache")
-
-# ── Module-level singletons ────────────────────────────────────────────────
-_client = None          # redis.Redis | None
-_fallback: dict = {}    # in-memory fallback when Redis unavailable
+_in_memory: dict[str, tuple[Any, float]] = {}  # key → (value, expires_at)
+_client = None  # Redis client singleton
 
 
-# ── Connection ─────────────────────────────────────────────────────────────
-def get_client(config):
-    """
-    Connect to Redis once and reuse the connection.
-    Returns None silently if Redis is disabled or unreachable.
-    """
+def get_client(config=None):
+    """Connect to Redis; return None if unavailable."""
     global _client
-
-    if not config.enabled:
-        return None
-
     if _client is not None:
         return _client
 
+    enabled = os.getenv("REDIS_ENABLED", "true").lower() == "true"
+    if not enabled:
+        return None
+
     try:
-        import redis as _redis
-        _client = _redis.from_url(config.url, decode_responses=True)
-        _client.ping()
-        logger.info("Redis connected: %s", config.url)
-    except Exception as exc:
-        logger.warning(
-            "Redis unavailable — using in-memory fallback. Error: %s", exc
-        )
-        _client = None
+        import redis
 
-    return _client
+        host = os.getenv("REDIS_HOST", "localhost")
+        port = int(os.getenv("REDIS_PORT", "6379"))
+        password = os.getenv("REDIS_PASSWORD") or None
+        r = redis.Redis(host=host, port=port, password=password, socket_connect_timeout=1)
+        r.ping()
+        _client = r
+        return _client
+    except Exception:
+        return None
 
-# ── Key building ───────────────────────────────────────────────────────────
+
 def make_key(prefix: str, **kwargs) -> str:
-    """
-    Build a deterministic cache key.
-    First 16 hex chars of SHA-256 — collision probability is negligible.
+    payload = json.dumps(kwargs, sort_keys=True, default=str)
+    h = hashlib.sha256(payload.encode()).hexdigest()
+    return f"{prefix}:{h}"
 
-    Example:
-        make_key("information_agent", query="retention drop?", data_products=["retention"])
-        → "information_agent:a3f91bc204e87d11"
-    """
-    raw    = json.dumps(kwargs, sort_keys=True, default=str)
-    digest = hashlib.sha256(raw.encode()).hexdigest()[:16]
-    return f"{prefix}:{digest}"
 
-# ── Get / Set ──────────────────────────────────────────────────────────────
-def cache_get(client, key: str) -> Any | None:
-    """Fetch from Redis or in-memory fallback. Returns None on miss."""
-    if client:
+def cache_get(client, key: str) -> Optional[Any]:
+    if client is not None:
         try:
-            val = client.get(key)
-            return json.loads(val) if val else None
-        except Exception as exc:
-            logger.warning("cache_get error: %s", exc)
-            return None
-    return _fallback.get(key)
+            raw = client.get(key)
+            if raw:
+                return json.loads(raw)
+        except Exception:
+            pass
+    # in-memory fallback
+    if key in _in_memory:
+        value, expires_at = _in_memory[key]
+        if expires_at > time.time():
+            return value
+        del _in_memory[key]
+    return None
 
-def cache_set(client, key: str, value: Any, ttl: int) -> None:
-    """Store to Redis (with TTL) or in-memory fallback."""
-    if client:
+
+def cache_set(client, key: str, value: Any, ttl: int = 300) -> None:
+    if client is not None:
         try:
             client.setex(key, ttl, json.dumps(value, default=str))
-        except Exception as exc:
-            logger.warning("cache_set error: %s", exc)
-    else:
-        _fallback[key] = value
+            return
+        except Exception:
+            pass
+    _in_memory[key] = (value, time.time() + ttl)
 
-# ── Invalidation ───────────────────────────────────────────────────────────
+
 def invalidate_pattern(client, pattern: str) -> int:
-    """
-    Delete all keys matching a glob pattern.
-    Returns count of deleted keys.
+    count = 0
+    if client is not None:
+        try:
+            keys = client.keys(pattern)
+            if keys:
+                count = client.delete(*keys)
+            return count
+        except Exception:
+            pass
+    # in-memory fallback
+    import fnmatch
+    to_del = [k for k in _in_memory if fnmatch.fnmatch(k, pattern)]
+    for k in to_del:
+        del _in_memory[k]
+    return len(to_del)
 
-    Example: invalidate_pattern(client, "information_agent:*")
-    """
-    if not client:
-        prefix = pattern.rstrip("*")
-        keys   = [k for k in _fallback if k.startswith(prefix)]
-        for k in keys:
-            del _fallback[k]
-        return len(keys)
-    try:
-        keys = client.keys(pattern)
-        return client.delete(*keys) if keys else 0
-    except Exception as exc:
-        logger.warning("invalidate_pattern error: %s", exc)
-        return 0
 
-# ── Decorator ──────────────────────────────────────────────────────────────
-def cached_node(prefix: str, ttl: int = 3600):
-    """
-    Decorator for read-only LangGraph node functions.
-
-    Wraps the node with a Redis cache lookup before calling the agent.
-    Works with both sync (def) and async (async def) node functions.
-
-    Args:
-        prefix:  Cache key prefix, e.g. "information_agent"
-        ttl:     Time-to-live in seconds
-
-    Usage:
-        @cached_node("information_agent", ttl=1800)
-        def information_node(state: AgentState) -> dict:
-            ...  # existing code unchanged
-
-    Cache key is built from: query + data_products + time_range
-    """
-    def decorator(func: Callable) -> Callable:
-
-        if inspect.iscoroutinefunction(func):
-            # ── async node ────────────────────────────────────────────
-            @wraps(func)
-            async def async_wrapper(state: dict, *args, **kwargs):
-                from config.settings import config as _cfg
-                client = get_client(_cfg.redis)
-                key    = make_key(
-                    prefix,
-                    query         = state.get("query", ""),
-                    data_products = state.get("data_products", []),
-                    time_range    = state.get("time_range", ""),
-                )
-                hit = cache_get(client, key)
-                if hit is not None:
-                    logger.info("Cache HIT  [%s]", prefix)
-                    return hit
-                logger.info("Cache MISS [%s] — calling agent", prefix)
-                result = await func(state, *args, **kwargs)
-                cache_set(client, key, result, ttl)
-                logger.info("Cache SET  [%s] ttl=%ds", prefix, ttl)
-                return result
-            return async_wrapper
-
-        else:
-            # ── sync node (current default) ───────────────────────────
-            @wraps(func)
-            def sync_wrapper(state: dict, *args, **kwargs):
-                from config.settings import config as _cfg
-                client = get_client(_cfg.redis)
-                key    = make_key(
-                    prefix,
-                    query         = state.get("query", ""),
-                    data_products = state.get("data_products", []),
-                    time_range    = state.get("time_range", ""),
-                )
-                hit = cache_get(client, key)
-                if hit is not None:
-                    logger.info("Cache HIT  [%s]", prefix)
-                    return hit
-                logger.info("Cache MISS [%s] — calling agent", prefix)
-                result = func(state, *args, **kwargs)
-                cache_set(client, key, result, ttl)
-                logger.info("Cache SET  [%s] ttl=%ds", prefix, ttl)
-                return result
-            return sync_wrapper
-
+def cached_node(prefix: str, ttl: int = 300):
+    """Decorator for caching LangGraph node results."""
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(state: dict) -> dict:
+            from src.config.settings import get_config
+            client = get_client(get_config())
+            key = make_key(
+                prefix,
+                query=state.get("query", ""),
+                data_products=state.get("data_products", []),
+                time_range=state.get("time_range", ""),
+            )
+            cached = cache_get(client, key)
+            if cached is not None:
+                return cached
+            result = fn(state)
+            cache_set(client, key, result, ttl)
+            return result
+        return wrapper
     return decorator
