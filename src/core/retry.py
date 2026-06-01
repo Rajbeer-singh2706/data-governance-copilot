@@ -16,12 +16,12 @@ def with_retry(
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
             last_exc = None
-            for attempt in range(max_retries + 1):
+            for attempt in range(max_retries):
                 try:
                     return fn(*args, **kwargs)
                 except exceptions as exc:
                     last_exc = exc
-                    if attempt < max_retries:
+                    if attempt < max_retries - 1:
                         sleep = backoff_factor * (2 ** attempt)
                         time.sleep(sleep)
             raise last_exc
@@ -32,21 +32,23 @@ def with_retry(
 def retry_agent_call(execute_fn: Callable, request: Any, max_retries: int = 3) -> Any:
     """
     Call execute_fn(request) with retries.
+    Makes exactly max_retries attempts total.
     Returns AgentResult(success=False) on final failure rather than raising.
     """
-    from src.core.base_agent import AgentResult
+    from core.base_agent import AgentResult
 
     last_exc = None
-    for attempt in range(max_retries + 1):
+    for attempt in range(max_retries):
         try:
             return execute_fn(request)
         except Exception as exc:
             last_exc = exc
-            if attempt < max_retries:
+            if attempt < max_retries - 1:
                 time.sleep(1.0 * (2 ** attempt))
 
+    error_msg = str(last_exc)
     return AgentResult(
         success=False,
-        message=f"Agent failed after {max_retries} retries",
-        errors=[str(last_exc)],
+        message=f"Failed after {max_retries} attempts: {error_msg}",
+        errors=[error_msg],
     )

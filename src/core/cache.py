@@ -1,6 +1,7 @@
 """Redis cache with in-memory fallback and @cached_node decorator."""
 from __future__ import annotations
 
+import fnmatch
 import functools
 import hashlib
 import json
@@ -9,6 +10,7 @@ import time
 from typing import Any, Optional
 
 _in_memory: dict[str, tuple[Any, float]] = {}  # key → (value, expires_at)
+_fallback = _in_memory   # alias used by tests
 _client = None  # Redis client singleton
 
 
@@ -38,7 +40,7 @@ def get_client(config=None):
 
 def make_key(prefix: str, **kwargs) -> str:
     payload = json.dumps(kwargs, sort_keys=True, default=str)
-    h = hashlib.sha256(payload.encode()).hexdigest()
+    h = hashlib.sha256(payload.encode()).hexdigest()[:16]
     return f"{prefix}:{h}"
 
 
@@ -79,8 +81,6 @@ def invalidate_pattern(client, pattern: str) -> int:
             return count
         except Exception:
             pass
-    # in-memory fallback
-    import fnmatch
     to_del = [k for k in _in_memory if fnmatch.fnmatch(k, pattern)]
     for k in to_del:
         del _in_memory[k]
@@ -92,7 +92,7 @@ def cached_node(prefix: str, ttl: int = 300):
     def decorator(fn):
         @functools.wraps(fn)
         def wrapper(state: dict) -> dict:
-            from src.config.settings import get_config
+            from config.settings import get_config
             client = get_client(get_config())
             key = make_key(
                 prefix,

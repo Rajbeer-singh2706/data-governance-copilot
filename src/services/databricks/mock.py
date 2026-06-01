@@ -5,16 +5,18 @@ import re
 from typing import Dict, List
 
 _RETENTION_NORMAL = [
-    {"product": "retention", "grr": 92.5, "nrr": 108.3, "churn_rate": 7.5,
-     "active_customers": 1240, "period": "2024-Q1"},
+    {"product": "retention", "gross_retention_rate": 92.5, "grr": 92.5,
+     "nrr": 108.3, "churn_rate": 7.5, "active_customers": 1240, "period": "2024-Q1",
+     "at_risk_accounts": 12},
 ]
 _RETENTION_LOW = [
-    {"product": "retention", "grr": 78.0, "nrr": 95.1, "churn_rate": 22.0,
-     "active_customers": 980, "period": "2024-Q1"},
+    {"product": "retention", "gross_retention_rate": 78.0, "grr": 78.0,
+     "nrr": 95.1, "churn_rate": 22.0, "active_customers": 980, "period": "2024-Q1",
+     "at_risk_accounts": 87},
 ]
 _BOOKINGS = [
-    {"product": "bookings", "arr": 4_200_000, "new_bookings": 380_000,
-     "expansion": 120_000, "churn_value": 45_000, "period": "2024-Q1"},
+    {"product": "bookings", "arr": 4_200_000, "total_bookings": 4_200_000,
+     "new_bookings": 380_000, "expansion": 120_000, "churn_value": 45_000, "period": "2024-Q1"},
 ]
 _CAC = [
     {"product": "cac", "blended_cac": 2850, "sales_cac": 3100,
@@ -38,7 +40,6 @@ class MockDatabricksService:
         self._low_grr = low_grr
 
     def query(self, sql: str) -> List[Dict]:
-        # Parse FROM clause to pick the right canned data
         match = re.search(r"FROM\s+\w+\.(\w+)", sql, re.IGNORECASE)
         table = match.group(1).lower() if match else ""
         if "retention" in table:
@@ -46,5 +47,4 @@ class MockDatabricksService:
         for key, rows in _TABLE_MAP.items():
             if key in table:
                 return rows
-        # Generic fallback
         return [{"result": "no data", "sql": sql}]

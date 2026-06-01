@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from src.teams.cards import build_error_card, build_hitl_card, build_response_card, build_welcome_card
-from src.teams.models import TeamsActivity
+from teams.cards import build_error_card, build_hitl_card, build_response_card, build_welcome_card
+from teams.models import TeamsActivity
 
 router = APIRouter(prefix="/teams")
 
@@ -25,11 +26,14 @@ def _verify_hmac(body: bytes, signature: str) -> bool:
 
 
 async def _handle_message(activity: TeamsActivity) -> dict:
-    query = activity.text or ""
+    query = (activity.text or "").strip()
     thread_id = activity.conversation.id if activity.conversation else "teams-default"
     user_id = activity.from_user.id if activity.from_user else "anonymous"
 
-    from src.graph.graph import get_graph
+    if not query:
+        return build_error_card("Please include a question or command.")
+
+    from graph.graph import get_graph
     graph = get_graph()
     state = {
         "query": query, "thread_id": thread_id, "user_id": user_id,
@@ -38,39 +42,39 @@ async def _handle_message(activity: TeamsActivity) -> dict:
     try:
         result = graph.invoke(state, config={"configurable": {"thread_id": thread_id}})
         if result.get("pending_action"):
-            card = build_hitl_card(result["pending_action"], thread_id, query)
-        else:
-            card = build_response_card(result)
+            return build_hitl_card(result["pending_action"], thread_id, query)
+        return build_response_card(result)
     except Exception as exc:
-        card = build_error_card(str(exc))
-    return {"type": "message", "attachments": [{"contentType": "application/vnd.microsoft.card.adaptive", "content": card}]}
+        return build_error_card(str(exc))
 
 
 async def _handle_invoke(activity: TeamsActivity) -> dict:
     value = activity.value or {}
-    action = value.get("action")
+    action = value.get("action", "")
     thread_id = value.get("thread_id", "teams-default")
+    query = value.get("query", "")
 
-    if action == "approve":
-        from src.graph.graph import get_graph
+    if action == "approve_tickets":
+        from graph.graph import get_graph
         graph = get_graph()
-        state = {"approved": True, "query": "", "thread_id": thread_id,
-                 "data_products": [], "time_range": "last_30_days"}
+        state = {
+            "approved": True, "query": query, "thread_id": thread_id,
+            "data_products": [], "time_range": "last_30_days",
+        }
         try:
             result = graph.invoke(state, config={"configurable": {"thread_id": thread_id}})
-            card = build_response_card(result)
+            return build_response_card(result)
         except Exception as exc:
-            card = build_error_card(str(exc))
+            return build_error_card(str(exc))
     else:
-        card = build_error_card("Action rejected.")
-
-    return {"type": "invokeResponse", "value": {"status": 200,
-            "body": {"type": "AdaptiveCard", "content": card}}}
+        return build_error_card("Action rejected. No tickets were created.")
 
 
 async def _handle_conversation_update(activity: TeamsActivity) -> dict:
-    card = build_welcome_card()
-    return {"type": "message", "attachments": [{"contentType": "application/vnd.microsoft.card.adaptive", "content": card}]}
+    members = activity.members_added or []
+    if not members:
+        return {}
+    return build_welcome_card()
 
 
 @router.post("/webhook")
@@ -78,9 +82,13 @@ async def teams_webhook(request: Request):
     body = await request.body()
     sig = request.headers.get("Authorization", "")
     if not _verify_hmac(body, sig):
-        raise HTTPException(status_code=401, detail="Invalid HMAC signature")
+        return JSONResponse(status_code=401, content={"detail": "Invalid HMAC signature"})
 
-    activity = TeamsActivity.model_validate_json(body)
+    # Parse JSON body — return 400 on invalid JSON
+    try:
+        activity = TeamsActivity.model_validate_json(body)
+    except Exception as exc:
+        return JSONResponse(status_code=400, content={"detail": f"Invalid JSON: {exc}"})
 
     if activity.type == "message":
         resp = await _handle_message(activity)

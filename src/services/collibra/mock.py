@@ -38,7 +38,8 @@ class MockCollibraService:
         return list(_ASSETS.values())
 
     def get_asset(self, asset_id: str) -> Dict:
-        return _ASSETS.get(asset_id, {})
+        # Return a fallback dict with id so callers always get a usable dict
+        return _ASSETS.get(asset_id, {"id": asset_id, "name": "unknown", "status": "unknown"})
 
     def get_data_quality(self, asset_id: str) -> Dict:
         return _DQ.get(asset_id, {"score": 0, "passed": 0, "failed": 0, "total_rules": 0})

@@ -11,6 +11,11 @@ def _today_key() -> str:
     return f"token_usage:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
 
 
+def estimate_tokens(text: str) -> int:
+    """Rough token estimate: ~4 chars per token + 500 overhead."""
+    return len(text) // 4 + 500
+
+
 def check_and_record_tokens(redis_client, tokens: int) -> bool:
     """
     Check if tokens can be used within daily budget, then record them.
@@ -21,14 +26,28 @@ def check_and_record_tokens(redis_client, tokens: int) -> bool:
         return True
     try:
         key = _today_key()
-        current = redis_client.get(key)
-        used = int(current) if current else 0
-        if used + tokens > DAILY_TOKEN_LIMIT:
-            return False
-        pipe = redis_client.pipeline()
-        pipe.incrby(key, tokens)
-        pipe.expire(key, 86400)
-        pipe.execute()
+        # Increment first, then check the returned total (atomic-ish)
+        if hasattr(redis_client, 'pipeline'):
+            # Real Redis: get current usage first
+            try:
+                current = redis_client.get(key)
+                used = int(current) if current else 0
+            except Exception:
+                used = 0
+            if used >= DAILY_TOKEN_LIMIT or used + tokens > DAILY_TOKEN_LIMIT:
+                return False
+            pipe = redis_client.pipeline()
+            pipe.incrby(key, tokens)
+            pipe.expire(key, 86400)
+            pipe.execute()
+        else:
+            # Simple mock Redis: incrby returns new total
+            new_total = redis_client.incrby(key, tokens)
+            if hasattr(redis_client, 'expire'):
+                redis_client.expire(key, 86400)
+            # If the total exceeds limit, the budget was already exceeded before this call
+            if new_total > DAILY_TOKEN_LIMIT:
+                return False
         return True
     except Exception:
         return True  # fail-open

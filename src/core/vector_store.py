@@ -15,7 +15,7 @@ class _ServiceAdapter:
 
 
 def get_vector_store(config=None) -> _ServiceAdapter:
-    from src.services.factory import get_vector_service
+    from services.factory import get_vector_service
     svc = get_vector_service(config)
     return _ServiceAdapter(svc)
 

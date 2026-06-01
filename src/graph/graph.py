@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
-from src.graph.nodes import (
+from graph.nodes import (
     auto_ticket_node,
     capacity_node,
     information_node,
@@ -15,7 +15,7 @@ from src.graph.nodes import (
     supervisor_node,
     synthesizer_node,
 )
-from src.graph.state import AgentState
+from graph.state import AgentState
 
 
 def _guardrail_router(state: AgentState) -> str:
@@ -137,3 +137,17 @@ def get_graph(checkpointer=None):
     if _graph is None:
         _graph = build_graph(checkpointer)
     return _graph
+
+
+# Alias used in older tests — return the compiled graph instance
+def _get_copilot_graph():
+    return get_graph()
+
+class _GraphProxy:
+    """Proxy that delegates .invoke() to the singleton graph."""
+    def invoke(self, *args, **kwargs):
+        return get_graph().invoke(*args, **kwargs)
+    def stream(self, *args, **kwargs):
+        return get_graph().stream(*args, **kwargs)
+
+copilot_graph = _GraphProxy()

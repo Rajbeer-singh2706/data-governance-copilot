@@ -4,22 +4,31 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 import uuid
+from datetime import datetime, timezone
 from typing import AsyncGenerator, Optional
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
-from src.api.middleware import limiter, user_limiter
-from src.graph.graph import get_graph
+from api.middleware import limiter, user_limiter
+from graph.graph import get_graph
+from fastapi.exceptions import RequestValidationError
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-app = FastAPI(title="Data Governance Copilot API", version="1.0.0")
+VERSION = "1.0.0"
+
+app = FastAPI(title="Data Governance Copilot API", version=VERSION)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 app.add_middleware(
     CORSMiddleware,
@@ -35,6 +44,13 @@ class QueryRequest(BaseModel):
     user_id: str = "anonymous"
     time_range: str = "last_30_days"
     data_products: list = []
+
+    @field_validator("query")
+    @classmethod
+    def query_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("query must not be empty")
+        return v
 
 
 def _run_graph(query_req: QueryRequest) -> dict:
@@ -65,13 +81,19 @@ async def query(request: Request, body: QueryRequest):
         result = await loop.run_in_executor(None, _run_graph, body)
         return {
             "query_id": result.get("query_id", str(uuid.uuid4())[:8]),
+            "thread_id": body.thread_id,
+            "intent": result.get("intent", "unknown"),
             "summary": result.get("final_summary", ""),
             "confidence": result.get("confidence", 0.0),
             "anomalies": result.get("anomalies", []),
+            "auto_tickets": result.get("auto_tickets", []),
             "sources": result.get("sources", []),
+            "errors": result.get("errors", []),
             "execution_ms": result.get("execution_ms", 0),
             "pending_action": result.get("pending_action"),
         }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -80,14 +102,14 @@ async def query(request: Request, body: QueryRequest):
 @limiter.limit("20/minute")
 async def query_stream(request: Request, body: QueryRequest):
     async def event_generator() -> AsyncGenerator[str, None]:
-        yield f"data: {json.dumps({'event': 'start', 'query': body.query})}\n\n"
+        yield f"data: {json.dumps({'type': 'start', 'query': body.query})}\n\n"
         try:
             loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(None, _run_graph, body)
-            yield f"data: {json.dumps({'event': 'result', 'data': {'summary': result.get('final_summary', ''), 'anomalies': result.get('anomalies', []), 'confidence': result.get('confidence', 0)}})}\n\n"
+            yield f"data: {json.dumps({'type': 'result', 'data': {'summary': result.get('final_summary', ''), 'anomalies': result.get('anomalies', []), 'confidence': result.get('confidence', 0)}})}\n\n"
         except Exception as exc:
-            yield f"data: {json.dumps({'event': 'error', 'message': str(exc)})}\n\n"
-        yield f"data: {json.dumps({'event': 'done'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -95,23 +117,36 @@ async def query_stream(request: Request, body: QueryRequest):
 @app.get("/history/{thread_id}")
 @limiter.limit("60/minute")
 async def get_history(request: Request, thread_id: str):
-    return {"thread_id": thread_id, "messages": [], "note": "History requires checkpointer with persistent storage"}
+    return {
+        "thread_id": thread_id,
+        "turns": 0,
+        "messages": [],
+        "note": "History requires checkpointer with persistent storage",
+    }
 
 
 @app.get("/agents/status")
 @limiter.limit("120/minute")
 async def agents_status(request: Request):
-    from src.core.cache import get_client
-    from src.core.llm_guard import get_daily_usage
-    from src.config.settings import get_config
+    from core.cache import get_client
+    from core.llm_guard import get_daily_usage
+    from config.settings import get_config
 
-    client = get_client(get_config())
+    cfg = get_config()
+    client = get_client(cfg)
     token_usage = get_daily_usage(client)
+
+    agent_names = ["information", "knowledge", "metadata", "capacity", "rule"]
+    agents = [{"name": n, "status": "ready"} for n in agent_names]
+
     return {
-        "redis": "connected" if client else "unavailable",
-        "agents": ["information", "knowledge", "metadata", "capacity", "rule"],
-        "mock_mode": os.getenv("ENABLE_MOCK", "true"),
-        "token_usage": token_usage,
+        "status": "ok",
+        "version": VERSION,
+        "environment": cfg.environment,
+        "redis_ok": client is not None,
+        "agents": agents,
+        "daily_tokens": token_usage,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -131,8 +166,8 @@ async def ingest(request: Request, file: UploadFile = File(...)):
     airflow_pass = os.getenv("AIRFLOW_ADMIN_PASSWORD", "admin")
 
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
+        async with httpx.AsyncClient() as c:
+            resp = await c.post(
                 f"http://{airflow_host}/api/v1/dags/on_demand_ingest_dag/dagRuns",
                 json={"conf": {"filepath": tmp_path}},
                 auth=(airflow_user, airflow_pass),
@@ -144,5 +179,5 @@ async def ingest(request: Request, file: UploadFile = File(...)):
 
 
 # Include Teams bot router
-from src.teams.bot import router as teams_router
+from teams.bot import router as teams_router
 app.include_router(teams_router)

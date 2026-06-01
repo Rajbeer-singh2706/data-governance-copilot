@@ -9,44 +9,44 @@ def _use_mock() -> bool:
 
 
 def get_data_service(config=None):
-    from src.services.databricks.mock import MockDatabricksService
+    from services.databricks.mock import MockDatabricksService
     if _use_mock():
         return MockDatabricksService()
     try:
-        from src.services.databricks.real import DatabricksService
+        from services.databricks.real import DatabricksService
         return DatabricksService(config)
-    except EnvironmentError:
+    except (EnvironmentError, ImportError):
         return MockDatabricksService()
 
 
 def get_ticket_service(config=None):
-    from src.services.jira.mock import MockJiraService
+    from services.jira.mock import MockJiraService
     if _use_mock():
         return MockJiraService()
     try:
-        from src.services.jira.real import JiraService
+        from services.jira.real import JiraService
         return JiraService()
-    except EnvironmentError:
+    except (EnvironmentError, ImportError):
         return MockJiraService()
 
 
 def get_metadata_service(config=None):
-    from src.services.collibra.mock import MockCollibraService
+    from services.collibra.mock import MockCollibraService
     if _use_mock():
         return MockCollibraService()
     try:
-        from src.services.collibra.real import CollibraService
+        from services.collibra.real import CollibraService
         return CollibraService()
-    except EnvironmentError:
+    except (EnvironmentError, ImportError):
         return MockCollibraService()
 
 
 def get_vector_service(config=None):
-    from src.services.pgvector.mock import NullVectorService
+    from services.pgvector.mock import NullVectorService
     if _use_mock():
         return NullVectorService()
     try:
-        from src.services.pgvector.real import PGVectorService
+        from services.pgvector.real import PGVectorService
         return PGVectorService(config)
-    except EnvironmentError:
+    except (EnvironmentError, ImportError):
         return NullVectorService()

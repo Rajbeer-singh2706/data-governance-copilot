@@ -1,8 +1,8 @@
 """Teams Pydantic V2 models."""
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
-from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field, model_validator
 
 
 class TeamsUser(BaseModel):
@@ -29,3 +29,14 @@ class TeamsActivity(BaseModel):
     value: Optional[Dict[str, Any]] = None
     service_url: Optional[str] = Field(None, alias="serviceUrl")
     channel_id: Optional[str] = Field(None, alias="channelId")
+    members_added: Optional[List[TeamsUser]] = Field(None, alias="membersAdded")
+
+    @property
+    def from_(self) -> Optional[TeamsUser]:
+        """Alias for from_user — tests use activity.from_"""
+        return self.from_user
+
+    @property
+    def membersAdded(self) -> Optional[List[TeamsUser]]:
+        """CamelCase alias for members_added."""
+        return self.members_added

@@ -62,7 +62,7 @@ def _keyword_fallback(query: str) -> IntentClassification:
 def classify_intent(query: str, config=None) -> IntentClassification:
     """Classify query intent using structured LLM output, falling back to keywords."""
     try:
-        from src.core.llm_factory import get_structured_llm
+        from core.llm_factory import get_structured_llm
         llm = get_structured_llm(config, schema=IntentClassification)
         prompt = (
             f"Classify this data governance query. "

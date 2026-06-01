@@ -6,11 +6,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-from src.core.base_agent import AgentRequest
-from src.core.cache import cached_node
-from src.core.guardrails import check_guardrails
-from src.core.retry import retry_agent_call
-from src.graph.state import AgentState
+from core.base_agent import AgentRequest
+from core.cache import cached_node
+from core.guardrails import check_guardrails
+from core.retry import retry_agent_call
+from graph.state import AgentState
 
 _HITL_KEYWORDS = ["threshold", "missing", "below", "risk", "drop", "fail"]
 
@@ -41,8 +41,8 @@ def post_hook(state: AgentState) -> AgentState:
 
 def supervisor_node(state: AgentState) -> AgentState:
     """Classify intent and determine which agents to run."""
-    from src.graph.intent import classify_intent
-    from src.graph.routing import get_agents_for_intent
+    from graph.intent import classify_intent
+    from graph.routing import get_agents_for_intent
 
     classification = classify_intent(state.get("query", ""))
     return {
@@ -55,8 +55,7 @@ def supervisor_node(state: AgentState) -> AgentState:
 
 @cached_node("information_agent", ttl=1800)
 def information_node(state: AgentState) -> AgentState:
-    from src.agents.information_agent import InformationAgent
-    agent = InformationAgent()
+    agent = _get_agent("information")
     request = AgentRequest(
         query=state.get("query", ""),
         time_range=state.get("time_range", "last_30_days"),
@@ -76,8 +75,7 @@ def information_node(state: AgentState) -> AgentState:
 
 @cached_node("knowledge_agent", ttl=7200)
 def knowledge_node(state: AgentState) -> AgentState:
-    from src.agents.knowledge_agent import KnowledgeAgent
-    agent = KnowledgeAgent()
+    agent = _get_agent("knowledge")
     request = AgentRequest(
         query=state.get("query", ""),
         thread_id=state.get("thread_id", "default"),
@@ -94,8 +92,7 @@ def knowledge_node(state: AgentState) -> AgentState:
 
 @cached_node("metadata_agent", ttl=3600)
 def metadata_node(state: AgentState) -> AgentState:
-    from src.agents.metadata_agent import MetadataAgent
-    agent = MetadataAgent()
+    agent = _get_agent("metadata")
     request = AgentRequest(
         query=state.get("query", ""),
         thread_id=state.get("thread_id", "default"),
@@ -111,7 +108,7 @@ def metadata_node(state: AgentState) -> AgentState:
 
 
 def capacity_node(state: AgentState) -> AgentState:
-    from src.agents.capacity_agent import CapacityAgent
+    from agents.capacity_agent import CapacityAgent
     agent = CapacityAgent()
     request = AgentRequest(
         query=state.get("query", ""),
@@ -128,7 +125,7 @@ def capacity_node(state: AgentState) -> AgentState:
 
 
 def rule_node(state: AgentState) -> AgentState:
-    from src.agents.rule_agent import RuleAgent
+    from agents.rule_agent import RuleAgent
     agent = RuleAgent()
     request = AgentRequest(
         query=state.get("query", ""),
@@ -154,18 +151,23 @@ def auto_ticket_node(state: AgentState) -> AgentState:
     if not approved:
         hitl_keywords = _HITL_KEYWORDS
         if any(any(kw in a.lower() for kw in hitl_keywords) for a in anomalies):
+            products = list({p for a in anomalies for p in ["retention","bookings","cac","ltv"] if p in a.lower()})
             return {
                 **state,
                 "pending_action": {
+                    "action": "create_jira_tickets",
                     "type": "create_tickets",
                     "anomalies": anomalies,
+                    "count": len(anomalies),
+                    "products": products,
+                    "message": f"Create {len(anomalies)} Jira ticket(s) for detected anomalies?",
                     "description": f"Create {len(anomalies)} Jira ticket(s) for detected anomalies?",
                 },
             }
         return state
 
     # Second pass: approved — create tickets
-    from src.agents.capacity_agent import CapacityAgent
+    from agents.capacity_agent import CapacityAgent
     agent = CapacityAgent()
 
     if not hasattr(agent, "create_ticket_from_anomaly"):
@@ -212,7 +214,7 @@ def synthesizer_node(state: AgentState) -> AgentState:
     anomaly_str = "; ".join(anomalies) if anomalies else "None"
 
     try:
-        from src.core.llm_factory import get_llm
+        from core.llm_factory import get_llm
         llm = get_llm()
         prompt = (
             f"You are a Data Governance Copilot. Answer the following question concisely "
@@ -236,3 +238,34 @@ def synthesizer_node(state: AgentState) -> AgentState:
     avg_confidence = round(sum(scores) / len(scores), 3) if scores else 0.8
 
     return {**state, "final_summary": summary, "confidence": avg_confidence}
+
+# Agent registry — accessible for testing/patching
+def _build_agents() -> dict:
+    from agents.information_agent import InformationAgent
+    from agents.knowledge_agent import KnowledgeAgent
+    from agents.metadata_agent import MetadataAgent
+    from agents.capacity_agent import CapacityAgent
+    from agents.rule_agent import RuleAgent
+    return {
+        "information": InformationAgent(),
+        "knowledge": KnowledgeAgent(),
+        "metadata": MetadataAgent(),
+        "capacity": CapacityAgent(),
+        "rule": RuleAgent(),
+    }
+
+_agents: dict = {}
+
+def _get_agent(name: str):
+    if not _agents:
+        _agents.update(_build_agents())
+    return _agents.get(name)
+
+# Eagerly populate at import time (tests access _agents["information"] before invoke)
+try:
+    _agents.update(_build_agents())
+except Exception:
+    pass  # Will populate lazily on first call
+
+
+
