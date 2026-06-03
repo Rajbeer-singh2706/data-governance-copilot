@@ -4,10 +4,16 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import time
 import uuid
 from datetime import datetime, timezone
 from typing import AsyncGenerator, Optional
+
+# Allow direct execution from the repo root or src/api folder.
+ROOT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_PATH not in sys.path:
+    sys.path.insert(0, ROOT_PATH)
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -181,3 +187,14 @@ async def ingest(request: Request, file: UploadFile = File(...)):
 # Include Teams bot router
 from teams.bot import router as teams_router
 app.include_router(teams_router)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        app,
+        host=os.getenv("API_HOST", "127.0.0.1"),
+        port=int(os.getenv("API_PORT", "8000")),
+        log_level="info",
+    )
