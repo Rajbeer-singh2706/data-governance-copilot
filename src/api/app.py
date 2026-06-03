@@ -14,8 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, field_validator
 
-from api.middleware import limiter, user_limiter
-from graph.graph import get_graph
+from src.api.middleware import limiter, user_limiter
+from src.graph.graph import get_graph
 from fastapi.exceptions import RequestValidationError
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded

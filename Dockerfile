@@ -28,12 +28,20 @@ COPY src/ ./src/
 COPY dags/ ./dags/
 COPY scripts/ ./scripts/
 
+# Ensure any legacy top-level imports (e.g. "from api.middleware") are
+# rewritten to the current package layout ("from src.api.middleware"). This
+# prevents stale/legacy import paths from causing runtime ModuleNotFoundError
+# when images are built from caches or older contexts.
+RUN find /app/src -type f -name "*.py" -exec sed -i \
+    -e 's/^from api\\./from src.api./g' \
+    -e 's/^import api\\./import src.api./g' {} + || true
+
 RUN mkdir -p /app/data /app/docs
 
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app:/app/src
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000 8501 8002

@@ -116,11 +116,10 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER:-admin}
       AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
-    command: >
-      bash -c "airflow db migrate &&
-               airflow users create --username $$AIRFLOW_ADMIN_USER
-               --password $$AIRFLOW_ADMIN_PASSWORD --firstname Admin
-               --lastname User --role Admin --email admin@example.com || true"
+    command:
+      - bash
+      - -lc
+      - "airflow db migrate || true"
 
   airflow-webserver:
     build:
@@ -134,7 +133,7 @@ services:
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY:-changeme}
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW_DOCS_PATH: /opt/airflow/docs
-    command: airflow webserver
+    command: airflow api-server
     volumes:
       - ./dags:/opt/airflow/dags
       - ./docs:/opt/airflow/docs

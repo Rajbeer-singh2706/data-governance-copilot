@@ -1,4 +1,4 @@
-FROM apache/airflow:2.9.2-python3.12
+FROM apache/airflow:3.2.2-python3.12
 
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 USER airflow
+ENV PATH=/home/airflow/.local/bin:$PATH
 
 COPY requirements.txt /tmp/requirements.txt
 RUN python -m pip install --no-cache-dir -r /tmp/requirements.txt
