@@ -1,8 +1,12 @@
-"""Application configuration — all fields use default_factory for env var reads."""
+"""Application configuration — all fields use default_factory for env var reads.
+Neon-compatible: supports DATABASE_URL (connection pooling via pgBouncer) as
+the primary connection string, falling back to host/port/user/password parts.
+"""
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from urllib.parse import urlparse
 
 
 @dataclass
@@ -22,7 +26,6 @@ class LLMConfig:
 
     @property
     def primary_model(self) -> str:
-        """Alias for model — backward compatibility."""
         return self.model
 
 
@@ -38,7 +41,6 @@ class RedisConfig:
 
     @property
     def url(self) -> str:
-        """Redis URL string."""
         if self.password:
             return f"redis://:{self.password}@{self.host}:{self.port}/{self.db}"
         return f"redis://{self.host}:{self.port}/{self.db}"
@@ -52,13 +54,30 @@ class DatabricksConfig:
     catalog: str = field(default_factory=lambda: os.getenv("DATABRICKS_CATALOG", "main"))
 
 
+def _parse_neon_url(raw: str):
+    """Parse a Neon DATABASE_URL and return (host, port, user, password, dbname)."""
+    p = urlparse(raw)
+    return (
+        p.hostname or "localhost",
+        p.port or 5432,
+        p.username or "postgres",
+        p.password or "",
+        (p.path or "/governance_db").lstrip("/"),
+    )
+
+
 @dataclass
 class VectorDBConfig:
+    # If DATABASE_URL is set (Neon style) it overrides individual parts.
+    database_url: str = field(default_factory=lambda: os.getenv("DATABASE_URL", ""))
+
     host: str = field(default_factory=lambda: os.getenv("POSTGRES_HOST", "localhost"))
     port: int = field(default_factory=lambda: int(os.getenv("POSTGRES_PORT", "5432")))
     database: str = field(default_factory=lambda: os.getenv("POSTGRES_DB", "governance_db"))
     user: str = field(default_factory=lambda: os.getenv("POSTGRES_USER", "postgres"))
     password: str = field(default_factory=lambda: os.getenv("POSTGRES_PASSWORD", ""))
+    sslmode: str = field(default_factory=lambda: os.getenv("POSTGRES_SSLMODE", "require"))
+
     table_name: str = field(
         default_factory=lambda: os.getenv("VECTOR_TABLE", "document_embeddings")
     )
@@ -69,11 +88,46 @@ class VectorDBConfig:
         default_factory=lambda: os.getenv("VECTOR_COLLECTION", "governance_docs")
     )
 
+    def __post_init__(self):
+        """If DATABASE_URL is set, override individual fields from it."""
+        if self.database_url:
+            h, port, u, pw, db = _parse_neon_url(self.database_url)
+            self.host = h
+            self.port = port
+            self.user = u
+            self.password = pw
+            self.database = db
+
     @property
     def connection_string(self) -> str:
+        """psycopg2-compatible connection string with SSL for Neon."""
+        if self.database_url:
+            # Neon provides a URL already; ensure psycopg2 driver and sslmode
+            url = self.database_url
+            # Replace asyncpg/postgres scheme with psycopg2-compatible one
+            url = url.replace("postgresql://", "postgresql+psycopg2://")
+            url = url.replace("postgres://", "postgresql+psycopg2://")
+            if "sslmode" not in url:
+                url += "?sslmode=require"
+            return url
+        ssl = f"?sslmode={self.sslmode}" if self.sslmode else ""
         return (
             f"postgresql+psycopg2://{self.user}:{self.password}"
-            f"@{self.host}:{self.port}/{self.database}"
+            f"@{self.host}:{self.port}/{self.database}{ssl}"
+        )
+
+    @property
+    def psycopg2_dsn(self) -> str:
+        """Raw psycopg2 connect kwargs as DSN string (no SQLAlchemy prefix)."""
+        if self.database_url:
+            url = self.database_url
+            url = url.replace("postgresql+psycopg2://", "postgresql://")
+            url = url.replace("postgres://", "postgresql://")
+            return url
+        ssl = f" sslmode={self.sslmode}" if self.sslmode else ""
+        return (
+            f"host={self.host} port={self.port} dbname={self.database} "
+            f"user={self.user} password={self.password}{ssl}"
         )
 
 
@@ -101,12 +155,10 @@ def get_config() -> AppConfig:
     return _config_singleton
 
 
-# Module-level alias for tests that do `from config.settings import config`
 config = get_config()
 
 
 def reset_config() -> None:
-    """Reset singleton — for testing only."""
     global _config_singleton, config
     _config_singleton = None
     config = get_config()

@@ -1,0 +1,22 @@
+{
+  "_comment": "Add this block to your Claude Desktop config.json under 'mcpServers'.",
+  "_config_location": {
+    "mac":     "~/Library/Application Support/Claude/claude_desktop_config.json",
+    "windows": "%APPDATA%\\Claude\\claude_desktop_config.json",
+    "linux":   "~/.config/Claude/claude_desktop_config.json"
+  },
+  "mcpServers": {
+    "data-governance-copilot": {
+      "command": "python",
+      "args": ["-m", "src.mcp_server.server"],
+      "cwd": "/path/to/your/data-governance-copilot",
+      "env": {
+        "PYTHONPATH": "/path/to/your/data-governance-copilot/src",
+        "ENABLE_MOCK": "true",
+        "REDIS_ENABLED": "false",
+        "GROQ_API_KEY": "gsk_...",
+        "DATABASE_URL": "postgresql://user:pass@ep-xxx.us-east-2.aws.neon.tech/governance_db?sslmode=require"
+      }
+    }
+  }
+}

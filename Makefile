@@ -1,35 +1,59 @@
-.PHONY: help start stop logs clean setup addtoml app_logs redis_logs api_logs
-# Default target
-help: ## Show this help message
-	@echo "Available commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+.PHONY: help install test lint docker-build docker-up docker-down mcp-stdio mcp-sse init-neon clean
 
-# Development
-setup: ## Install Python dependencies
-	uv sync
+help:
+	@echo "Data Governance Copilot — make targets"
+	@echo ""
+	@echo "  install       Install dependencies with uv"
+	@echo "  test          Run full test suite"
+	@echo "  lint          Run ruff linter"
+	@echo "  docker-build  Build all Docker images"
+	@echo "  docker-up     Start all services (Neon-backed)"
+	@echo "  docker-down   Stop all services"
+	@echo "  mcp-stdio     Start MCP server (stdio, for Claude Desktop)"
+	@echo "  mcp-sse       Start MCP server (SSE, for remote clients)"
+	@echo "  init-neon     Run Neon schema initialisation SQL"
 
-addtoml:
-	uv add -r requirements.txt
+install:
+	uv pip install -r requirements.txt
 
-# Service management
-start: ## Start all services
-	docker compose up --build -d
+test:
+	ENABLE_MOCK=true REDIS_ENABLED=false \
+	  uv run pytest tests/ --cov=src --cov-fail-under=80 -v
 
-stop: ## Stop all services
-	docker-compose down
+lint:
+	ruff check src/ tests/
 
-logs: ## Show service logs
-	docker compose logs -f
+docker-build:
+	docker compose build
 
-clean:
+docker-up:
+	docker compose up -d
+
+docker-down:
+	docker compose down
+
+## Start MCP in stdio mode
+# Or copy the config from claude_desktop_config_example.json
+# into ~/Library/Application Support/Claude/claude_desktop_config.json
+mcp-stdio:
+	PYTHONPATH=src TRANSPORT=stdio \
+	  uv run python -m src.mcp_server.server
+
+mcp-sse:
+	PYTHONPATH=src TRANSPORT=sse MCP_PORT=8002 \
+	  uv run python -m src.mcp_server.server
+
+# 3. Run the init SQL (once)
+init-neon:
+	uv run python -c "import os,sys,subprocess; url=os.getenv('DATABASE_URL'); (sys.stderr.write('ERROR: DATABASE_URL not set. Export your Neon connection string first.\n') or sys.exit(1)) if not url else subprocess.check_call(['psql', url, '-f', 'scripts/init_neon.sql'])"
+
+ui:
+	PYTHONPATH=src uv run streamlit run src/ui/app.py
+
+api:
+	PYTHONPATH=src uv run uvicorn src.api.app:app --reload --port 8000
+
+# Cleanup
+clean: ## Clean up everything
 	docker compose down -v
 	docker system prune -f
-
-app_logs:
-	docker compose logs -f app
-
-redis_logs:
-	docker compose logs -f redis
-
-api_logs:
-	docker compose logs -f api
