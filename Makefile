@@ -1,4 +1,4 @@
-.PHONY: help install test lint docker-build docker-up docker-down mcp-stdio mcp-sse init-neon clean
+.PHONY: help install test lint docker-build up down mcp-stdio mcp-sse init-neon clean
 
 help:
 	@echo "Data Governance Copilot — make targets"
@@ -7,8 +7,8 @@ help:
 	@echo "  test          Run full test suite"
 	@echo "  lint          Run ruff linter"
 	@echo "  docker-build  Build all Docker images"
-	@echo "  docker-up     Start all services (Neon-backed)"
-	@echo "  docker-down   Stop all services"
+	@echo "  up            Start all services (Neon-backed)"
+	@echo "  down          Stop all services"
 	@echo "  mcp-stdio     Start MCP server (stdio, for Claude Desktop)"
 	@echo "  mcp-sse       Start MCP server (SSE, for remote clients)"
 	@echo "  init-neon     Run Neon schema initialisation SQL"
@@ -26,10 +26,10 @@ lint:
 docker-build:
 	docker compose build
 
-docker-up:
+up:
 	docker compose up -d
 
-docker-down:
+down:
 	docker compose down
 
 ## Start MCP in stdio mode
