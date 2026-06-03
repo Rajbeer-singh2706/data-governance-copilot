@@ -14,7 +14,8 @@ openai>=1.30.0
 anthropic>=0.28.0
 
 # ── Vector Store ─────────────────────────────────────────────────────────────
-langchain-postgres>=0.0.9
+# Note: langchain-postgres requires SQLAlchemy 2.x which conflicts with apache-airflow 2.9.2
+# Removed to allow all services to build. Can be installed separately in services that need it.
 pgvector>=0.2.5
 psycopg2-binary>=2.9.9
 
