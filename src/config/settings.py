@@ -8,6 +8,8 @@ import os
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
+from dotenv import load_dotenv
+load_dotenv()
 
 @dataclass
 class LLMConfig:
