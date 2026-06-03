@@ -1,5 +1,3 @@
-version: "3.9"
-
 # ─────────────────────────────────────────────────────────────────────────────
 #  Shared environment.
 #  DATABASE_URL (Neon) drives all PostgreSQL connections.
@@ -119,8 +117,8 @@ services:
       AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER:-admin}
       AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
     command: >
-      bash -c "airflow db migrate &&
-               airflow users create --username $$AIRFLOW_ADMIN_USER
+      bash -c "/opt/airflow/venv/bin/airflow db migrate &&
+               /opt/airflow/venv/bin/airflow users create --username $$AIRFLOW_ADMIN_USER
                --password $$AIRFLOW_ADMIN_PASSWORD --firstname Admin
                --lastname User --role Admin --email admin@example.com || true"
 
@@ -136,7 +134,7 @@ services:
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY:-changeme}
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW_DOCS_PATH: /opt/airflow/docs
-    command: airflow webserver
+    command: /opt/airflow/venv/bin/airflow webserver
     volumes:
       - ./dags:/opt/airflow/dags
       - ./docs:/opt/airflow/docs
@@ -158,7 +156,7 @@ services:
       AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY:-}
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW_DOCS_PATH: /opt/airflow/docs
-    command: airflow scheduler
+    command: /opt/airflow/venv/bin/airflow scheduler
     volumes:
       - ./dags:/opt/airflow/dags
       - ./docs:/opt/airflow/docs

@@ -46,7 +46,8 @@ redis>=5.0.0
 structlog>=24.1.0
 
 # ── Airflow ──────────────────────────────────────────────────────────────────
-apache-airflow>=2.10.0
+# Align Airflow packages with the base image used by Dockerfile.airflow
+apache-airflow==2.9.2
 
 # ── Testing ──────────────────────────────────────────────────────────────────
 pytest>=8.2.0

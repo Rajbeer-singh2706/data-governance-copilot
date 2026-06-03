@@ -1,4 +1,4 @@
-.PHONY: help install test lint docker-build up down mcp-stdio mcp-sse init-neon clean
+.PHONY: help install test lint docker-build up down mcp-stdio mcp-sse init-neon clean logs_app logs_api ui api
 
 help:
 	@echo "Data Governance Copilot — make targets"
@@ -57,3 +57,9 @@ api:
 clean: ## Clean up everything
 	docker compose down -v
 	docker system prune -f
+
+logs_app:
+	docker compose logs -f api
+
+logs_api:
+	docker compose logs -f api
