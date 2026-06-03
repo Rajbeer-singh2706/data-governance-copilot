@@ -59,7 +59,7 @@ clean: ## Clean up everything
 	docker system prune -f
 
 logs_app:
-	docker compose logs -f api
+	docker compose logs -f app
 
 logs_api:
 	docker compose logs -f api
