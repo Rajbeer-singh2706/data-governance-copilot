@@ -31,7 +31,7 @@ _PII_PATTERNS = [
     (re.compile(r"\b[A-Z]{2}\d{6}[A-D]\b"), "[NI_REDACTED]"),
 ]
 
-MIN_LEN = 3
+MIN_LEN = 2
 MAX_LEN = 2000
 
 

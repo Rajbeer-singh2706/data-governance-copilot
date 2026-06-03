@@ -17,11 +17,17 @@ _HITL_KEYWORDS = ["threshold", "missing", "below", "risk", "drop", "fail"]
 
 def pre_hook(state: AgentState) -> AgentState:
     """Validate input, run guardrails, record start time."""
+    import logging
+    logger = logging.getLogger("graph.pre_hook")
     result = check_guardrails(state.get("query", ""))
+    if not result.passed:
+        logger.warning(f"Guardrail blocked query reason={result.reason!r} query={state.get('query', '')!r}")
     return {
         **state,
         "query": result.query,
         "guardrail_passed": result.passed,
+        "guardrail_reason": result.reason,
+        "final_summary": f"🚫 Blocked: {result.reason}" if not result.passed else "",
         "start_time": time.perf_counter(),
         "query_id": str(uuid.uuid4())[:8],
         "agent_results": [],
@@ -226,7 +232,11 @@ def synthesizer_node(state: AgentState) -> AgentState:
         )
         response = llm.invoke(prompt)
         summary = response.content if hasattr(response, "content") else str(response)
-    except Exception:
+    except Exception as exc:
+        import logging
+        logging.getLogger("graph.synthesizer").error(
+            f"LLM synthesis failed, using string fallback: {exc}", exc_info=True
+        )
         # String fallback
         summary = (
             f"Analysis complete for: '{query}'. "
@@ -266,6 +276,3 @@ try:
     _agents.update(_build_agents())
 except Exception:
     pass  # Will populate lazily on first call
-
-
-

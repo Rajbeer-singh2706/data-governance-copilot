@@ -2,18 +2,28 @@
 from __future__ import annotations
 
 import streamlit as st
+from src.core.logging_utils import get_logger
+
+logger = get_logger("streamlit.app")
 
 st.set_page_config(page_title="Data Governance Copilot", page_icon="🏛️", layout="wide")
 
 
 def _run_query(query: str, thread_id: str) -> dict:
+    logger.info(f"Running query thread_id={thread_id!r} query={query!r}")
     from src.graph.graph import get_graph
     graph = get_graph()
     state = {
         "query": query, "thread_id": thread_id, "user_id": "streamlit-user",
         "time_range": "last_30_days", "data_products": [], "approved": False,
     }
-    return graph.invoke(state, config={"configurable": {"thread_id": thread_id}})
+    result = graph.invoke(state, config={"configurable": {"thread_id": thread_id}})
+    logger.info(
+        f"Query complete thread_id={thread_id!r} "
+        f"confidence={result.get('confidence')} ms={result.get('execution_ms')} "
+        f"guardrail_passed={result.get('guardrail_passed', True)}"
+    )
+    return result
 
 
 def _render_hitl_panel(pending_action: dict, thread_id: str, query: str):
@@ -114,6 +124,7 @@ def main():
                         "confidence": result.get("confidence", 0),
                     }
                 except Exception as exc:
+                    logger.error(f"Query failed thread_id={thread_id!r} query={prompt!r}: {exc}", exc_info=True)
                     msg_data = {"role": "assistant", "content": f"❌ Error: {exc}"}
 
                 st.session_state.messages.append(msg_data)

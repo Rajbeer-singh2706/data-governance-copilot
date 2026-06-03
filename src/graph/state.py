@@ -44,6 +44,7 @@ class AgentState(TypedDict, total=False):
     # Hook fields (Day 13)
     start_time: float
     guardrail_passed: bool
+    guardrail_reason: str
     _agents_ran: List[str]
 
 
@@ -79,6 +80,7 @@ def initial_state(
         "query_id": "",
         "start_time": 0.0,
         "guardrail_passed": True,
+        "guardrail_reason": "",
         "_agents_ran": [],
     }
     state.update(kwargs)
