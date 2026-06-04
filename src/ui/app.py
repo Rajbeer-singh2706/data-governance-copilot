@@ -1,6 +1,14 @@
 """Streamlit chat UI with HITL panel and execution stats."""
 from __future__ import annotations
 
+import os
+import sys
+
+# Ensure the project root is on sys.path when Streamlit executes this file directly.
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
 import streamlit as st
 from src.core.logging_utils import get_logger
 

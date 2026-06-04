@@ -1,6 +1,5 @@
 # 🏛️ Data Governance Copilot
-### TO RUN ########
-## uv run streamlit run src/ui/app.py 
+
 
 
 ## updated
@@ -9,6 +8,14 @@
 ## uv init --name data_gov_env
 ## uv add -r requriments.txt
 
+
+### TO RUN Streamlit ########
+## uv run streamlit run src/ui/app.py 
+
+### to run fastAPI Server ######
+# uvicorn src.api.app:app --host 0.0.0.0 --port 8000
+
+http://localhost:8000/docs#
 
 ##### RUN ####
 
