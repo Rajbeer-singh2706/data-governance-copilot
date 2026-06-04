@@ -77,6 +77,22 @@ async def _handle_conversation_update(activity: TeamsActivity) -> dict:
     return build_welcome_card()
 
 
+async def handle_activity(body: bytes) -> dict:
+    """Standalone callable — used by api/app.py if router is not included."""
+    try:
+        activity = TeamsActivity.model_validate_json(body)
+    except Exception as exc:
+        return {"error": f"Invalid JSON: {exc}"}
+
+    if activity.type == "message":
+        return await _handle_message(activity)
+    elif activity.type == "invoke":
+        return await _handle_invoke(activity)
+    elif activity.type == "conversationUpdate":
+        return await _handle_conversation_update(activity)
+    return {}
+
+
 @router.post("/webhook")
 async def teams_webhook(request: Request):
     body = await request.body()
@@ -84,7 +100,6 @@ async def teams_webhook(request: Request):
     if not _verify_hmac(body, sig):
         return JSONResponse(status_code=401, content={"detail": "Invalid HMAC signature"})
 
-    # Parse JSON body — return 400 on invalid JSON
     try:
         activity = TeamsActivity.model_validate_json(body)
     except Exception as exc:

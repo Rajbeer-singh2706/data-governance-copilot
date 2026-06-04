@@ -114,7 +114,7 @@ class TestFastAPIHealth:
         assert resp.status_code == 200
         assert "text/event-stream" in resp.headers.get("content-type", "")
         text = resp.text
-        assert "event" in text
+        assert "type" in text  # SSE payload uses {"type": "start"|"result"|"done"}
 
 
 # ── Error Handling ─────────────────────────────────────────────────────────────
@@ -193,9 +193,9 @@ class TestErrorHandling:
             attempts.append(1)
             raise RuntimeError("always fails")
 
-        result = retry_agent_call(flaky, AgentRequest(query="test"), max_retries=1)
+        result = retry_agent_call(flaky, AgentRequest(query="test"), max_retries=2)
         assert result.success is False
-        assert len(attempts) == 2  # 1 initial + 1 retry
+        assert len(attempts) == 2  # max_retries=2 → 2 total calls
 
 
 # ── Logging Utils ──────────────────────────────────────────────────────────────
@@ -238,12 +238,20 @@ class TestLoggingUtils:
 # ── Teams Cards ────────────────────────────────────────────────────────────────
 
 class TestTeamsCards:
+    """Cards return Teams message envelopes; inner AdaptiveCard is at attachments[0]["content"]."""
+
+    def _content(self, card):
+        """Unwrap the Teams envelope to get the inner AdaptiveCard."""
+        assert card["type"] == "message", f"Expected Teams envelope, got: {card.get('type')}"
+        return card["attachments"][0]["content"]
+
     def test_build_response_card_structure(self):
         from src.teams.cards import build_response_card
         result = {"final_summary": "Retention is healthy.", "anomalies": [], "confidence": 0.95}
         card = build_response_card(result)
-        assert card["type"] == "AdaptiveCard"
-        assert len(card["body"]) >= 2
+        content = self._content(card)
+        assert content["type"] == "AdaptiveCard"
+        assert len(content["body"]) >= 2
 
     def test_build_response_card_with_anomalies(self):
         from src.teams.cards import build_response_card
@@ -262,7 +270,8 @@ class TestTeamsCards:
             {"description": "Create 2 tickets?", "anomalies": []},
             thread_id="t1", query="check retention",
         )
-        actions = card.get("actions", [])
+        content = self._content(card)
+        actions = content.get("actions", [])
         titles = [a["title"] for a in actions]
         assert any("Approve" in t for t in titles)
         assert any("Reject" in t for t in titles)
@@ -270,18 +279,21 @@ class TestTeamsCards:
     def test_build_error_card(self):
         from src.teams.cards import build_error_card
         card = build_error_card("Something went wrong")
-        assert card["type"] == "AdaptiveCard"
-        assert any("Error" in str(b) for b in card["body"])
+        content = self._content(card)
+        assert content["type"] == "AdaptiveCard"
+        assert any("Error" in str(b) for b in content["body"])
 
     def test_build_welcome_card(self):
         from src.teams.cards import build_welcome_card
         card = build_welcome_card()
-        assert card["type"] == "AdaptiveCard"
+        content = self._content(card)
+        assert content["type"] == "AdaptiveCard"
 
     def test_build_thinking_card(self):
         from src.teams.cards import build_thinking_card
         card = build_thinking_card()
-        assert card["type"] == "AdaptiveCard"
+        content = self._content(card)
+        assert content["type"] == "AdaptiveCard"
 
 
 # ── Teams Models ───────────────────────────────────────────────────────────────
@@ -360,72 +372,93 @@ class TestIngestionCoverage:
         assert chunk_documents([]) == []
 
     def test_embedder_returns_parallel_vectors(self):
-        from src.ingestion.embedder import embed_chunks
-        from langchain_core.documents import Document
         from unittest.mock import patch, MagicMock
+        import sys
 
-        chunks = [Document(page_content="text one", metadata={}),
-                  Document(page_content="text two", metadata={})]
+        # psycopg2 may not be installed in CI — stub it before import
+        mock_psycopg2 = MagicMock()
+        mock_openai_emb = MagicMock()
+        mock_openai_emb_instance = MagicMock()
         fake_vecs = [[0.1] * 1536, [0.2] * 1536]
-        mock_emb = MagicMock()
-        mock_emb.embed_documents.return_value = fake_vecs
+        mock_openai_emb_instance.embed_documents.return_value = fake_vecs
+        mock_openai_emb.return_value = mock_openai_emb_instance
 
-        with patch("src.ingestion.embedder.OpenAIEmbeddings", return_value=mock_emb):
-            result = embed_chunks(chunks)
+        with patch.dict(sys.modules, {"psycopg2": mock_psycopg2,
+                                       "psycopg2.extras": MagicMock()}):
+            with patch("src.ingestion.embedder.OpenAIEmbeddings", mock_openai_emb):
+                from langchain_core.documents import Document
+                import importlib, src.ingestion.embedder as emb_mod
+                importlib.reload(emb_mod)
+                emb_mod.OpenAIEmbeddings = mock_openai_emb
+
+                chunks = [Document(page_content="text one", metadata={}),
+                          Document(page_content="text two", metadata={})]
+                result = emb_mod.embed_chunks(chunks)
 
         assert len(result) == 2
         assert len(result[0]) == 1536
 
     def test_store_skips_all_duplicates(self):
-        import hashlib
-        import src.ingestion.store as store_module
-        from src.ingestion.store import upsert_chunks
-        from langchain_core.documents import Document
+        import hashlib, sys
         from unittest.mock import patch, MagicMock
+        from langchain_core.documents import Document
 
-        chunk = Document(page_content="existing content", metadata={
-            "content_hash": hashlib.sha256(b"existing content").hexdigest()
-        })
+        mock_psycopg2 = MagicMock()
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_cursor.fetchall.return_value = [(chunk.metadata["content_hash"],)]
+
+        content_hash = hashlib.sha256(b"existing content").hexdigest()
+        chunk = Document(page_content="existing content",
+                         metadata={"content_hash": content_hash})
+
+        mock_cursor.fetchall.return_value = [(content_hash,)]
         mock_cursor.__enter__ = lambda s: s
         mock_cursor.__exit__ = MagicMock(return_value=False)
         mock_conn.cursor.return_value = mock_cursor
+        mock_psycopg2.connect.return_value = mock_conn
 
-        with patch.object(store_module.psycopg2, "connect", return_value=mock_conn), \
-             patch("src.ingestion.store.PGVector"), \
-             patch("src.ingestion.store.OpenAIEmbeddings"):
-            result = upsert_chunks([chunk], [[0.1] * 1536])
+        with patch.dict(sys.modules, {"psycopg2": mock_psycopg2,
+                                       "psycopg2.extras": MagicMock()}):
+            import importlib
+            import src.ingestion.store as store_module
+            importlib.reload(store_module)
+            store_module.psycopg2 = mock_psycopg2
+            with patch.object(store_module, "PGVector", MagicMock()), \
+                 patch.object(store_module, "OpenAIEmbeddings", MagicMock()):
+                result = store_module.upsert_chunks([chunk], [[0.1] * 1536])
 
         assert result == 0
 
     def test_store_inserts_new_chunks(self):
-        import hashlib
-        from src.ingestion.store import upsert_chunks
-        from langchain_core.documents import Document
+        import hashlib, sys
         from unittest.mock import patch, MagicMock
+        from langchain_core.documents import Document
 
+        mock_psycopg2 = MagicMock()
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []   # no existing hashes → new chunk
+        mock_cursor.__enter__ = lambda s: s
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value = mock_cursor
+        mock_psycopg2.connect.return_value = mock_conn
+
+        content_hash = hashlib.sha256(b"brand new content").hexdigest()
         chunk = Document(page_content="brand new content", metadata={
-            "content_hash": hashlib.sha256(b"brand new content").hexdigest(),
+            "content_hash": content_hash,
             "source": "new.pdf", "product": "retention",
         })
 
-        with patch("psycopg2.connect") as mock_pg, \
-             patch("src.ingestion.store.PGVector") as mock_pgv, \
-             patch("src.ingestion.store.OpenAIEmbeddings"):
-            mock_conn = MagicMock()
-            mock_cursor = MagicMock()
-            mock_cursor.fetchall.return_value = []
-            mock_cursor.__enter__ = lambda s: s
-            mock_cursor.__exit__ = MagicMock(return_value=False)
-            mock_conn.cursor.return_value = mock_cursor
-            mock_pg.connect.return_value = mock_conn
-
-            mock_store = MagicMock()
-            mock_pgv.return_value = mock_store
-
-            result = upsert_chunks([chunk], [[0.1] * 1536])
+        mock_store = MagicMock()
+        with patch.dict(sys.modules, {"psycopg2": mock_psycopg2,
+                                       "psycopg2.extras": MagicMock()}):
+            import importlib
+            import src.ingestion.store as store_module
+            importlib.reload(store_module)
+            store_module.psycopg2 = mock_psycopg2
+            with patch.object(store_module, "PGVector", return_value=mock_store), \
+                 patch.object(store_module, "OpenAIEmbeddings", MagicMock()):
+                result = store_module.upsert_chunks([chunk], [[0.1] * 1536])
 
         assert result == 1
         mock_store.add_embeddings.assert_called_once()

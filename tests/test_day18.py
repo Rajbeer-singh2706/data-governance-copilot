@@ -16,7 +16,9 @@ os.environ.setdefault("OPENAI_API_KEY", "")
 
 class TestVectorDBConfig:
 
-    def test_defaults(self):
+    def test_defaults(self, monkeypatch):
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.delenv("POSTGRES_HOST", raising=False)
         from config.settings import VectorDBConfig
         cfg = VectorDBConfig()
         assert cfg.host          == "localhost"
@@ -25,7 +27,8 @@ class TestVectorDBConfig:
         assert cfg.table_name    == "document_embeddings"
         assert cfg.embedding_dim == 1536
 
-    def test_connection_string_format(self):
+    def test_connection_string_format(self, monkeypatch):
+        monkeypatch.delenv("DATABASE_URL", raising=False)
         from config.settings import VectorDBConfig
         cfg = VectorDBConfig(host="mydb", port=5432, database="db",
                              user="u", password="p")

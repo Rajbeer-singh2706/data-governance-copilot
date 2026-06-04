@@ -1,136 +1,217 @@
-"""Streamlit chat UI with HITL panel and execution stats."""
+"""FastAPI application — /query, /query/stream, /history, /agents/status, /teams/webhook, /ingest."""
 from __future__ import annotations
 
-import streamlit as st
-from src.core.logging_utils import get_logger
+import asyncio
+import json
+import os
+import time
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import StreamingResponse, JSONResponse
+from pydantic import BaseModel
 
 from dotenv import load_dotenv
 load_dotenv()
-logger = get_logger("streamlit.app")
 
-st.set_page_config(page_title="Data Governance Copilot", page_icon="🏛️", layout="wide")
+from src.core.logging_utils import get_logger
+from src.api.middleware import limiter
+
+logger = get_logger("api.app")
+
+# Module-level import — patchable in tests
+from src.graph.graph import get_graph  # noqa: E402
+
+app = FastAPI(title="Data Governance Copilot API", version="1.0.0")
+app.state.limiter = limiter
+
+# Include Teams router
+from src.teams.bot import router as teams_router
+app.include_router(teams_router)
 
 
-def _run_query(query: str, thread_id: str) -> dict:
-    logger.info(f"Running query thread_id={thread_id!r} query={query!r}")
-    from src.graph.graph import get_graph
+# ── Models ─────────────────────────────────────────────────────────────────────
+
+class QueryRequest(BaseModel):
+    query: str
+    thread_id: str = "default"
+    user_id: str = "api-user"
+    time_range: str = "last_30_days"
+    data_products: List[str] = []
+    approved: bool = False
+
+
+# ── Internal helpers ────────────────────────────────────────────────────────────
+
+def _run_graph(req: QueryRequest) -> Dict:
+    """Invoke the LangGraph and return the result dict."""
     graph = get_graph()
     state = {
-        "query": query, "thread_id": thread_id, "user_id": "streamlit-user",
-        "time_range": "last_30_days", "data_products": [], "approved": False,
+        "query": req.query,
+        "thread_id": req.thread_id,
+        "user_id": req.user_id,
+        "time_range": req.time_range,
+        "data_products": req.data_products,
+        "approved": req.approved,
     }
-    result = graph.invoke(state, config={"configurable": {"thread_id": thread_id}})
-    logger.info(
-        f"Query complete thread_id={thread_id!r} "
-        f"confidence={result.get('confidence')} ms={result.get('execution_ms')} "
-        f"guardrail_passed={result.get('guardrail_passed', True)}"
-    )
-    return result
+    return graph.invoke(state, config={"configurable": {"thread_id": req.thread_id}})
 
 
-def _render_hitl_panel(pending_action: dict, thread_id: str, query: str):
-    st.warning("⚠️ Human Approval Required")
-    st.write(pending_action.get("description", "Please review and approve."))
-    anomalies = pending_action.get("anomalies", [])
-    if anomalies:
-        st.write("**Detected Anomalies:**")
-        for a in anomalies:
-            st.write(f"• {a}")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("✅ Approve & Create Tickets", key="approve_btn"):
-            from src.graph.graph import get_graph
-            graph = get_graph()
-            state = {"approved": True, "query": query, "thread_id": thread_id,
-                     "data_products": [], "time_range": "last_30_days"}
-            result = graph.invoke(state, config={"configurable": {"thread_id": thread_id}})
-            st.success(f"✅ Created {len(result.get('auto_tickets', []))} ticket(s)")
-            st.session_state.pop("pending_hitl", None)
-            st.rerun()
-    with col2:
-        if st.button("❌ Reject", key="reject_btn"):
-            st.info("Action rejected.")
-            st.session_state.pop("pending_hitl", None)
-            st.rerun()
+def _to_response(result: Dict, req: QueryRequest) -> Dict:
+    return {
+        "query_id": result.get("query_id", str(uuid.uuid4())[:8]),
+        "thread_id": req.thread_id,
+        "intent": result.get("intent", "unknown"),
+        "summary": result.get("final_summary", ""),
+        "confidence": result.get("confidence", 0.0),
+        "sources": list(set(result.get("sources", [])))[:10],
+        "auto_tickets": result.get("auto_tickets", []),
+        "anomalies": result.get("anomalies", []),
+        "errors": result.get("errors", []),
+        "execution_ms": result.get("execution_ms", 0.0),
+        "pending_action": result.get("pending_action"),
+    }
 
 
-def main():
-    st.title("🏛️ Data Governance Copilot")
-    st.caption("Agentic AI assistant for data quality, governance, and analytics")
+# ── Endpoints ───────────────────────────────────────────────────────────────────
 
-    # Sidebar
-    with st.sidebar:
-        st.header("⚙️ Settings")
-        thread_id = st.text_input("Thread ID", value="streamlit-session-1")
-        st.divider()
-        st.header("📊 Agents")
-        for agent in ["information", "knowledge", "metadata", "capacity", "rule"]:
-            st.success(f"✅ {agent}")
-        import os
-        st.divider()
-        st.caption(f"Mode: {'🧪 Mock' if os.getenv('ENABLE_MOCK', 'true') == 'true' else '🔗 Live'}")
-
-    # Chat history
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
-            if msg.get("anomalies"):
-                with st.expander("⚠️ Anomalies"):
-                    for a in msg["anomalies"]:
-                        st.warning(a)
-            if msg.get("sources"):
-                with st.expander("📎 Sources"):
-                    for s in msg["sources"]:
-                        st.caption(s)
-            if msg.get("execution_ms"):
-                st.caption(f"⏱ {msg['execution_ms']:.0f}ms | confidence: {msg.get('confidence', 0):.0%}")
-
-    # HITL panel
-    if "pending_hitl" in st.session_state:
-        _render_hitl_panel(
-            st.session_state.pending_hitl["action"],
-            st.session_state.pending_hitl["thread_id"],
-            st.session_state.pending_hitl["query"],
-        )
-
-    # Chat input
-    if prompt := st.chat_input("Ask about data quality, governance, metrics..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.write(prompt)
-
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                try:
-                    result = _run_query(prompt, thread_id)
-                    summary = result.get("final_summary", "Processing complete.")
-                    st.write(summary)
-
-                    if result.get("pending_action"):
-                        st.session_state.pending_hitl = {
-                            "action": result["pending_action"],
-                            "thread_id": thread_id,
-                            "query": prompt,
-                        }
-                        st.rerun()
-
-                    msg_data = {
-                        "role": "assistant", "content": summary,
-                        "anomalies": result.get("anomalies", []),
-                        "sources": list(set(result.get("sources", [])))[:5],
-                        "execution_ms": result.get("execution_ms", 0),
-                        "confidence": result.get("confidence", 0),
-                    }
-                except Exception as exc:
-                    logger.error(f"Query failed thread_id={thread_id!r} query={prompt!r}: {exc}", exc_info=True)
-                    msg_data = {"role": "assistant", "content": f"❌ Error: {exc}"}
-
-                st.session_state.messages.append(msg_data)
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "data-governance-copilot"}
 
 
-if __name__ == "__main__":
-    main()
+@app.post("/query")
+async def query_endpoint(request: Request, req: QueryRequest):
+    if not req.query or not req.query.strip():
+        raise HTTPException(status_code=400, detail="query must not be empty")
+
+    try:
+        result = _run_graph(req)
+    except Exception as exc:
+        logger.error(f"Graph invocation failed: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    # Guardrail blocked
+    if result.get("guardrail_passed") is False:
+        raise HTTPException(status_code=400, detail=result.get("final_summary", "Query blocked"))
+
+    return _to_response(result, req)
+
+
+@app.post("/query/stream")
+async def query_stream(request: Request, req: QueryRequest):
+    if not req.query or not req.query.strip():
+        raise HTTPException(status_code=400, detail="query must not be empty")
+
+    async def event_generator():
+        yield f"data: {json.dumps({'type': 'start', 'thread_id': req.thread_id})}\n\n"
+        try:
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, lambda: _run_graph(req))
+            payload = _to_response(result, req)
+            yield f"data: {json.dumps({'type': 'result', **payload})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)})}\n\n"
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.get("/history/{thread_id}")
+async def history(request: Request, thread_id: str):
+    try:
+        graph = get_graph()
+        checkpointer = getattr(graph, "checkpointer", None)
+        if checkpointer is None:
+            return {"thread_id": thread_id, "messages": [], "turns": 0}
+        config = {"configurable": {"thread_id": thread_id}}
+        state = checkpointer.get(config)
+        history_msgs = []
+        if state and state.values:
+            history_msgs = state.values.get("conversation_history", [])
+        return {"thread_id": thread_id, "messages": history_msgs, "turns": len(history_msgs)}
+    except Exception:
+        return {"thread_id": thread_id, "messages": [], "turns": 0}
+
+
+@app.get("/agents/status")
+async def agents_status(request: Request):
+    agent_names = ["information", "knowledge", "metadata", "capacity", "rule"]
+
+    redis_ok = False
+    try:
+        from src.core.cache import _redis_client
+        if _redis_client:
+            _redis_client.ping()
+            redis_ok = True
+    except Exception:
+        pass
+
+    token_usage: Dict = {}
+    try:
+        from src.core.llm_guard import get_daily_usage
+        token_usage = get_daily_usage()
+    except Exception:
+        pass
+
+    mock_mode = os.getenv("ENABLE_MOCK", "true").lower() == "true"
+
+    return {
+        "status": "ok",
+        "version": "1.0.0",
+        "environment": os.getenv("ENVIRONMENT", "development"),
+        "redis_ok": redis_ok,
+        "mock_mode": mock_mode,
+        "agents": [{"name": a, "status": "ready"} for a in agent_names],
+        "daily_tokens": token_usage,
+        "token_usage": token_usage,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.post("/ingest")
+async def ingest(request: Request):
+    """Trigger on-demand document ingestion via Airflow REST API."""
+    try:
+        form = await request.form()
+        file = form.get("file")
+        if not file:
+            raise HTTPException(status_code=400, detail="No file uploaded")
+
+        airflow_url = os.getenv("AIRFLOW_BASE_URL", "http://localhost:8080")
+        dag_id = "on_demand_ingest_dag"
+        import tempfile
+
+        contents = await file.read()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename}") as tmp:
+            tmp.write(contents)
+            tmp_path = tmp.name
+
+        # Try to trigger Airflow; fall back gracefully
+        run_id = None
+        try:
+            import aiohttp
+            payload = {"conf": {"filepath": tmp_path}}
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{airflow_url}/api/v1/dags/{dag_id}/dagRuns",
+                    json=payload,
+                    auth=aiohttp.BasicAuth(
+                        os.getenv("AIRFLOW_USER", "airflow"),
+                        os.getenv("AIRFLOW_PASSWORD", "airflow"),
+                    ),
+                ) as resp:
+                    data = await resp.json()
+                    run_id = data.get("dag_run_id")
+        except Exception:
+            run_id = f"local-{uuid.uuid4().hex[:8]}"
+
+        return {"status": "triggered", "dag_run_id": run_id, "filepath": tmp_path}
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Ingest failed: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))

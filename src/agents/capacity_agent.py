@@ -84,7 +84,7 @@ class CapacityAgent(BaseAgent):
         summary_md = f"**{len(formatted)} tickets found** for `{product}` — {open_issues} open"
         return AgentResult(
             success=True,
-            data={product: formatted},
+            data={"tickets": formatted, product: formatted},
             message=summary_md,
             confidence=0.90,
             sources=[f"Jira/DGC"],

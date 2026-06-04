@@ -1,7 +1,29 @@
-"""Adaptive Card builders for Teams bot."""
+"""Adaptive Card builders for Teams bot.
+
+Each public build_*_card() function returns a Teams message envelope:
+    { "type": "message", "attachments": [{ "contentType": "...", "content": <AdaptiveCard> }] }
+
+The inner AdaptiveCard is accessible via card["attachments"][0]["content"].
+test_day20_production.py tests access the raw card via the _raw_* helpers.
+"""
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+
+
+# ── Low-level helpers ──────────────────────────────────────────────────────────
+
+def _adaptive_card(body: List, actions: List = None) -> Dict:
+    """Build a raw AdaptiveCard dict."""
+    card: Dict = {
+        "type": "AdaptiveCard",
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "version": "1.4",
+        "body": body,
+    }
+    if actions:
+        card["actions"] = actions
+    return card
 
 
 def _teams_message(card_content: Dict) -> Dict:
@@ -17,17 +39,11 @@ def _teams_message(card_content: Dict) -> Dict:
     }
 
 
-def _adaptive_card(body: List, actions: List = None) -> Dict:
-    card = {
-        "type": "AdaptiveCard",
-        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-        "version": "1.4",
-        "body": body,
-    }
-    if actions:
-        card["actions"] = actions
-    return card
+# Keep backward-compatible alias used by bot.py
+teams_envelope = _teams_message
 
+
+# ── Public card builders (return Teams envelope) ───────────────────────────────
 
 def build_response_card(result: Dict) -> Dict:
     summary = result.get("final_summary", result.get("summary", "No summary available."))
@@ -36,14 +52,14 @@ def build_response_card(result: Dict) -> Dict:
     auto_tickets = result.get("auto_tickets", [])
     errors = result.get("errors", [])
 
-    body = [
+    body: List = [
         {"type": "TextBlock", "text": "📊 Data Governance Copilot",
          "weight": "Bolder", "size": "Medium"},
         {"type": "TextBlock", "text": summary, "wrap": True},
         {"type": "TextBlock", "text": f"Confidence: {confidence:.0%}", "isSubtle": True},
     ]
     if anomalies:
-        body.append({"type": "TextBlock", "text": "⚠️ Anomaly Detected:", "weight": "Bolder"})
+        body.append({"type": "TextBlock", "text": "⚠️ Anomalies Detected:", "weight": "Bolder"})
         for a in anomalies[:5]:
             body.append({"type": "TextBlock", "text": f"• {a}", "wrap": True, "color": "Warning"})
     if auto_tickets:
@@ -65,7 +81,7 @@ def build_hitl_card(pending_action: Dict, thread_id: str, query: str) -> Dict:
                                                                     "Approve this action?"))
     anomalies = pending_action.get("anomalies", [])
 
-    body = [
+    body: List = [
         {"type": "TextBlock", "text": "🔔 Action Required",
          "weight": "Bolder", "size": "Medium"},
         {"type": "TextBlock", "text": description, "wrap": True},

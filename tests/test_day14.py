@@ -156,7 +156,7 @@ class TestLLMFactory:
                        os.getenv("ANTHROPIC_API_KEY"), os.getenv("GEMINI_API_KEY")])
         if not has_key:
             import pytest; pytest.skip("No LLM API key configured")
-        cfg = LLMConfig(primary_model="gpt-4o", fallback_models=["gpt-4o-mini"])
+        cfg = LLMConfig(model="gpt-4o", fallback_models=["gpt-4o-mini"])
         llm = get_llm(cfg)
         assert isinstance(llm, BaseChatModel)
 

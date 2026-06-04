@@ -9,10 +9,14 @@ def get_llm(config=None, streaming: bool = False):
     """Return a BaseChatModel with LiteLLM fallback chain."""
     try:
         from langchain_groq import ChatGroq
-        from langchain_community.chat_models import ChatLiteLLM
 
-        model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
-        api_key = os.getenv("GROQ_API_KEY", "")
+        # Prefer config values; fall back to env vars
+        if config is not None:
+            model = getattr(config, "model", None) or os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+            api_key = getattr(config, "api_key", None) or os.getenv("GROQ_API_KEY", "")
+        else:
+            model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+            api_key = os.getenv("GROQ_API_KEY", "")
 
         if not api_key:
             raise ValueError("GROQ_API_KEY not set")

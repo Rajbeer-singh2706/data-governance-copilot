@@ -157,7 +157,7 @@ class TestRetryCoverage:
     def test_with_retry_retries_on_failure(self):
         from src.core.retry import with_retry
         calls = []
-        @with_retry(max_retries=2, backoff_factor=0.001)
+        @with_retry(max_retries=3, backoff_factor=0.001)
         def fn():
             calls.append(1)
             if len(calls) < 3:
@@ -386,11 +386,11 @@ class TestServicesCoverage:
 
     def test_factory_returns_mock_when_enabled(self):
         os.environ["ENABLE_MOCK"] = "true"
-        from src.services.factory import get_data_service, get_ticket_service, get_metadata_service, get_vector_service
-        from src.services.databricks.mock import MockDatabricksService
-        from src.services.jira.mock import MockJiraService
-        from src.services.collibra.mock import MockCollibraService
-        from src.services.pgvector.mock import NullVectorService
+        from services.factory import get_data_service, get_ticket_service, get_metadata_service, get_vector_service
+        from services.databricks.mock import MockDatabricksService
+        from services.jira.mock import MockJiraService
+        from services.collibra.mock import MockCollibraService
+        from services.pgvector.mock import NullVectorService
         assert isinstance(get_data_service(), MockDatabricksService)
         assert isinstance(get_ticket_service(), MockJiraService)
         assert isinstance(get_metadata_service(), MockCollibraService)

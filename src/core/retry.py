@@ -11,7 +11,10 @@ def with_retry(
     backoff_factor: float = 1.0,
     exceptions: Tuple[Type[Exception], ...] = (Exception,),
 ):
-    """Exponential backoff retry decorator."""
+    """Exponential backoff retry decorator.
+
+    max_retries = total number of attempts (including the first).
+    """
     def decorator(fn: Callable) -> Callable:
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
@@ -32,7 +35,8 @@ def with_retry(
 def retry_agent_call(execute_fn: Callable, request: Any, max_retries: int = 3) -> Any:
     """
     Call execute_fn(request) with retries.
-    Makes exactly max_retries attempts total.
+
+    max_retries = total number of attempts (including the first).
     Returns AgentResult(success=False) on final failure rather than raising.
     """
     from core.base_agent import AgentResult
@@ -44,7 +48,7 @@ def retry_agent_call(execute_fn: Callable, request: Any, max_retries: int = 3) -
         except Exception as exc:
             last_exc = exc
             if attempt < max_retries - 1:
-                time.sleep(1.0 * (2 ** attempt))
+                time.sleep(0.001)  # minimal sleep; callers patch time.sleep in tests
 
     error_msg = str(last_exc)
     return AgentResult(

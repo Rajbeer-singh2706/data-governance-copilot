@@ -52,3 +52,36 @@ def sample_request():
         thread_id="test-thread",
         user_id="test-user",
     )
+
+
+# Additional fixtures for test_day20_coverage.py
+@pytest.fixture
+def mock_databricks():
+    from services.databricks.mock import MockDatabricksService
+    return MockDatabricksService()
+
+
+@pytest.fixture
+def mock_databricks_low_grr():
+    from services.databricks.mock import MockDatabricksService
+    svc = MockDatabricksService()
+    svc._low_grr = True
+    return svc
+
+
+@pytest.fixture
+def mock_jira():
+    from services.jira.mock import MockJiraService
+    return MockJiraService()
+
+
+@pytest.fixture
+def mock_collibra():
+    from services.collibra.mock import MockCollibraService
+    return MockCollibraService()
+
+
+@pytest.fixture
+def null_vector():
+    from services.pgvector.mock import NullVectorService
+    return NullVectorService()

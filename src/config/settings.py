@@ -15,9 +15,6 @@ load_dotenv()
 class LLMConfig:
     provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "groq"))
     model: str = field(default_factory=lambda: os.getenv("LLM_MODEL", "llama-3.3-70b-versatile"))
-    api_key: str = field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""))
-    temperature: float = 0.1
-    max_tokens: int = 2048
     fallback_models: list = field(
         default_factory=lambda: [
             "gpt-4o-mini",
@@ -25,9 +22,13 @@ class LLMConfig:
             "gemini/gemini-1.5-flash",
         ]
     )
+    api_key: str = field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""))
+    temperature: float = 0.1
+    max_tokens: int = 2048
 
     @property
     def primary_model(self) -> str:
+        """Alias for model — backward-compatibility with older test code."""
         return self.model
 
 
@@ -54,6 +55,7 @@ class DatabricksConfig:
     token: str = field(default_factory=lambda: os.getenv("DATABRICKS_TOKEN", ""))
     http_path: str = field(default_factory=lambda: os.getenv("DATABRICKS_HTTP_PATH", ""))
     catalog: str = field(default_factory=lambda: os.getenv("DATABRICKS_CATALOG", "main"))
+    schema: str = field(default_factory=lambda: os.getenv("DATABRICKS_SCHEMA", "default"))
 
 
 def _parse_neon_url(raw: str):
@@ -145,7 +147,12 @@ class AppConfig:
     vector_db: VectorDBConfig = field(default_factory=VectorDBConfig)
 
 
-DATA_PRODUCTS = ["retention", "bookings", "cac", "ltv"]
+DATA_PRODUCTS = {
+    "retention": {"owner": "data-team", "table": "metrics.retention"},
+    "bookings":  {"owner": "revenue-team", "table": "metrics.bookings"},
+    "cac":       {"owner": "marketing-team", "table": "metrics.cac"},
+    "ltv":       {"owner": "finance-team", "table": "metrics.ltv"},
+}
 
 _config_singleton: AppConfig | None = None
 
