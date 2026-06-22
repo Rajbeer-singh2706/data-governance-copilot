@@ -63,3 +63,6 @@ logs_app:
 
 logs_api:
 	docker compose logs -f api
+
+#clean_pycache:
+#  pass 
